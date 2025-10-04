@@ -513,7 +513,7 @@
     }
     @media (max-width: 991.98px) {
         .navbar-brand img {
-            height: 40px;       /* Smaller logo for mobile */
+            height: 90px;       /* Smaller logo for mobile */
         }
         .navbar-brand.lg img {
         height:90px;
