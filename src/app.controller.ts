@@ -221,8 +221,7 @@ export class AppController {
       try {
         const {
           id,
-          firstName,
-          lastName,
+          name,
           address,
           city,
           state,
@@ -242,8 +241,7 @@ export class AppController {
             return { error: 'Order not found' };
           }
           await order.update({
-            firstName,
-            lastName,
+            name,
             address,
             city,
             state,
@@ -258,8 +256,7 @@ export class AppController {
           });
         } else {
           order = await Order.create({
-            firstName,
-            lastName,
+            name,
             address,
             city,
             state,
