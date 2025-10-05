@@ -70,7 +70,7 @@
 }
 
 .btn.border-secondary:hover {
-    background: var(--bs-secondary) !important;
+    background: #2e6419 !important;
     color: var(--bs-white) !important;
 }
 
@@ -534,3 +534,14 @@
     .border-black {
         border: 1px solid #2e6419 !important;
     }
+
+    /* Custom styles for Add to Cart and Buy Now buttons */
+.custom-cart-btn:hover,
+.custom-cart-btn:focus {
+  background-color: #2e6419 !important;
+  color: #fff !important;
+}
+.custom-cart-btn:hover i,
+.custom-cart-btn:focus i {
+  color: #fff !important;
+}
