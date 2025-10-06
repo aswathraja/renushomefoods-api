@@ -13,6 +13,85 @@ export class AppController {
     res.sendFile(join(__dirname, 'web', 'index.html'));
   }
 
+  @Post('pending-order')
+  async getPendingOrder(@Body() body: { mobile: string }) {
+    try {
+      if (!body.mobile) {
+        return { error: 'Mobile number is required.' };
+      }
+      // Find the pending order with all details
+      const pendingOrder = await Order.findOne({
+        where: {
+          mobile: body.mobile,
+          status: 'Ordered',
+        },
+        include: [{ model: Cart, as: 'Cart' }],
+        order: [['id', 'DESC']],
+      });
+      const pendingOrderJSON = pendingOrder ? pendingOrder.toJSON() : null;
+      if (!pendingOrder) {
+        return { error: 'No pending order found for this mobile number.' };
+      }
+      // Get cart and cart products
+      const cart = await Cart.findByPk((pendingOrder as any).cartId, {
+        include: [
+          {
+            model: CartProduct,
+            include: [
+              {
+                model: Product,
+                include: [ProductImage, Category],
+              },
+              PriceList
+            ],
+          },
+        ],
+      });
+      let products: any[] = [];
+      const cartJSON = cart?.toJSON() as any;
+      if (cartJSON && cartJSON.CartProducts) {
+        products = cartJSON.CartProducts.map((cp: any) => ({
+          productId: cp.productId,
+          name: cp.Product?.name,
+          tagline: cp.Product?.tagline,
+          image: cp.Product?.ProductImages[0]?.fileName,
+          category: cp.Product?.Category?.category,
+          priceList: cp.PriceList ? {
+            id: cp.PriceList.id,
+            weight: cp.PriceList.weight,
+            unitprice: cp.PriceList.unitprice,
+            productid: cp.PriceList.productid,
+          } : undefined,
+          quantity: cp.quantity,
+        }));
+      }
+      // Format order object
+      const orderObj = {
+        id: pendingOrderJSON.id,
+        name: pendingOrderJSON.name,
+        address: pendingOrderJSON.address,
+        city: pendingOrderJSON.city,
+        state: pendingOrderJSON.state,
+        pincode: pendingOrderJSON.pincode,
+        mobile: pendingOrderJSON.mobile,
+        email: pendingOrderJSON.email,
+        notes: pendingOrderJSON.notes,
+        shippingMethod: pendingOrderJSON.shippingMethod,
+        paymentMethod: pendingOrderJSON.paymentMethod,
+        cartId: pendingOrderJSON.cartId,
+        status: pendingOrderJSON.status,
+      };
+      return {
+        cartId: cartJSON.id,
+        order: orderObj,
+        products,
+      };
+    } catch (error) {
+      console.error('Error in getPendingOrder:', error);
+      return { error: 'Failed to fetch pending order.' };
+    }
+  }
+
   @Post('get-pricelists-by-product')
   async getPriceListsByProduct(@Body() body: { category?: string }) {
     try {
@@ -189,7 +268,6 @@ export class AppController {
           createdProdcts.push(createdProduct);
         }
       }
-      
       return cart;
     } catch (error) {
       console.error('Error in saveOrUpdateCart:', error);
