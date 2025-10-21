@@ -545,3 +545,7 @@
 .custom-cart-btn:focus i {
   color: #fff !important;
 }
+
+.page-container {
+    min-height: 75vh !important;
+}

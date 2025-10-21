@@ -1,11 +1,11 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import * as dotenv from 'dotenv';
 import * as express from 'express';
 import * as path from 'path';
-import * as dotenv from 'dotenv';
 import { join } from 'path';
+import { AppModule } from './app.module';
 dotenv.config();
-
+``
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors({ origin: '*' });
@@ -19,12 +19,10 @@ async function bootstrap() {
 
   // Serve React static files
   app.use(express.static(join(__dirname, '..', 'web')));
-
   // SPA fallback for non-API routes
   app.use(/^((?!\/api).)*$/, (req, res) => {
     res.sendFile(join(__dirname, '..', 'web', 'index.html'));
   });
-
   await app.listen(3000);
 }
 void bootstrap();

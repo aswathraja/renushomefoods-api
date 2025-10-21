@@ -1,0 +1,1380 @@
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Headers,
+    HttpException,
+    HttpStatus,
+    Post,
+} from '@nestjs/common'
+import * as CryptoES from 'crypto-es'
+import * as jwt from 'jsonwebtoken'
+import { Op, Sequelize, UniqueConstraintError } from 'sequelize'
+import { sequelize } from './db'
+import { Order, User, UserAddress, UserSession } from './models'
+import { decryptPayload, encryptPayload } from './utils'
+
+function hashPassword(password: string): string {
+    return CryptoES.SHA256(password).toString()
+}
+
+function comparePassword(password: string, hash: string): boolean {
+    return CryptoES.SHA256(password).toString() === hash
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
+
+@Controller('user')
+export class UserController {
+    @Post('register')
+    async register(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const hashedPassword = hashPassword(decryptedBody.password)
+            // Check for existing user by email, username, or phone
+            const existingUser = await User.findOne({
+                where: {
+                    [Op.or]: [
+                        { email: decryptedBody.email },
+                        { username: decryptedBody.username },
+                        { phone: decryptedBody.phone },
+                    ],
+                },
+            })
+
+            if (existingUser) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User with provided email, username, or phone already exists.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Create user
+            await User.create({
+                name: decryptedBody.name,
+                username: decryptedBody.username,
+                email: decryptedBody.email,
+                phone: decryptedBody.phone,
+                password: hashedPassword,
+            })
+            const user = await User.findOne({
+                where: {
+                    username: decryptedBody.username,
+                    email: decryptedBody.email,
+                    password: hashedPassword,
+                },
+            })
+            await user.reload() // re-fetch from DB
+            await UserAddress.create({
+                userId: user.toJSON().id,
+                name: decryptedBody.name, // or decryptedBody.addressName if separate
+                addressLine1: decryptedBody.address,
+                city: decryptedBody.city,
+                state: decryptedBody.state,
+                country: decryptedBody.country,
+                pincode: decryptedBody.pincode,
+                phone: decryptedBody.phone,
+                isDefault: true, // assuming this is the first address
+            })
+
+            const encryptedResponse = {
+                response: encryptPayload({ status: 'ok', user }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            console.error('Registration Error:', error)
+
+            // Re-throw if it's an HttpException (let Nest handle it)
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error instanceof UniqueConstraintError) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error:
+                                'Duplicate entry. ' +
+                                error.errors.map((e: any) => e.path),
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to register user. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('update')
+    async update(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const user = await User.findByPk(decryptedBody.id)
+            if (!user) return { error: 'User not found.' }
+            if (decryptedBody.password) {
+                decryptedBody.password = hashPassword(decryptedBody.password)
+            }
+            await user.update(decryptedBody)
+            const encryptedResponse = {
+                response: encryptPayload({ status: 'ok', user: user }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to update user. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('validate-details')
+    async checkAvailability(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { username, email, phone } = decryptedBody
+            if (
+                username === undefined ||
+                email === undefined ||
+                phone === undefined
+            ) {
+                throw new HttpException(
+                    { error: 'Missing Required fields' },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Normalize phone number: remove spaces and leading "+"
+            const normalizePhone = (num: string) =>
+                num.replace(/^\+\d{1,2}|\s+/g, '')
+
+            const normalizedPhone = normalizePhone(phone)
+
+            const whereConditions: any = {
+                [Op.or]: [
+                    { username },
+                    { email },
+                    sequelize.where(
+                        sequelize.fn(
+                            'RIGHT',
+                            sequelize.fn(
+                                'REPLACE',
+                                sequelize.fn(
+                                    'REPLACE',
+                                    sequelize.fn(
+                                        'REPLACE',
+                                        sequelize.col('phone'),
+                                        ' ',
+                                        '',
+                                    ),
+                                    '+',
+                                    '',
+                                ),
+                                '-',
+                                '', // optionally handle dashes if any
+                            ),
+                            10,
+                        ),
+                        normalizedPhone, // last 10 digits of input
+                    ),
+                ],
+            }
+            // Run a single query that checks for any of the fields
+            const existingUsers = await User.findAll({ where: whereConditions })
+
+            const errors: Record<string, string> = {}
+
+            // Now check which fields matched
+            for (const user of existingUsers) {
+                const userJSON = user.toJSON()
+                if (userJSON.username === username) {
+                    errors.username = 'Username is already in use'
+                }
+
+                if (userJSON.email === email) {
+                    errors.email = 'Email is already in use'
+                }
+                const dbPhoneNormalized = userJSON.phone.replace(
+                    /^\+\d{1,2}|\s+/g,
+                    '',
+                )
+
+                if (dbPhoneNormalized === normalizedPhone) {
+                    errors.phone = 'Phone number is already in use'
+                }
+            }
+
+            // If any specific field matched, return detailed errors
+            if (Object.keys(errors).length > 0) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload(errors),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const encryptedResponse = {
+                response: encryptPayload({ status: 'ok' }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            // Re-throw if it's an HttpException (let Nest handle it)
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            // For other unexpected errors, throw a generic 500
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to check availability. ' + error?.message,
+                    }),
+                },
+                HttpStatus.FORBIDDEN,
+            )
+        }
+    }
+
+    @Post('forgot-password')
+    async forgotPassword(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+
+            const { identifier } = decryptedBody
+
+            if (!identifier) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Missing identifier (username, email, or phone)',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Normalize input to last 10 digits (for phone comparison)
+            const identifierDigits = identifier.replace(/\D/g, '').slice(-10)
+
+            // Build the query to match by username, email, or last 10 digits of phone
+            const user = await User.findOne({
+                where: {
+                    [Op.or]: [
+                        { username: identifier },
+                        { email: identifier },
+                        sequelize.where(
+                            sequelize.fn(
+                                'RIGHT',
+                                sequelize.fn(
+                                    'REPLACE',
+                                    sequelize.fn(
+                                        'REPLACE',
+                                        sequelize.fn(
+                                            'REPLACE',
+                                            sequelize.fn(
+                                                'REPLACE',
+                                                sequelize.fn(
+                                                    'REPLACE',
+                                                    sequelize.col('phone'),
+                                                    '+',
+                                                    '',
+                                                ),
+                                                ' ',
+                                                '',
+                                            ),
+                                            '-',
+                                            '',
+                                        ),
+                                        '(',
+                                        '',
+                                    ),
+                                    ')',
+                                    '',
+                                ),
+                                10,
+                            ),
+                            identifierDigits,
+                        ),
+                    ],
+                },
+            })
+
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found with provided identifier.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Generate 4-digit OTP
+            const otp = Math.floor(1000 + Math.random() * 9000).toString()
+
+            // Update OTP in the database
+            await user.update({ otp })
+
+            return {
+                response: encryptPayload({
+                    message: 'OTP has been sent to your registered email id.',
+                    otp, // ⚠️ Return this only for testing – remove in production
+                }),
+            }
+        } catch (error) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to process forgot password request. ' +
+                            error.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('reset-password')
+    async resetPassword(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+
+            const { identifier, otp, newPassword } = decryptedBody
+            if (!identifier || !otp || !newPassword) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Missing required fields: identifier, otp, password',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Normalize phone input (if applicable)
+            const identifierDigits = identifier.replace(/\D/g, '').slice(-10)
+
+            const user = await User.findOne({
+                where: {
+                    [Op.or]: [
+                        { username: identifier },
+                        { email: identifier },
+                        Sequelize.where(
+                            Sequelize.fn(
+                                'RIGHT',
+                                Sequelize.fn(
+                                    'REPLACE',
+                                    Sequelize.fn(
+                                        'REPLACE',
+                                        Sequelize.fn(
+                                            'REPLACE',
+                                            Sequelize.fn(
+                                                'REPLACE',
+                                                Sequelize.fn(
+                                                    'REPLACE',
+                                                    Sequelize.col('phone'),
+                                                    '+',
+                                                    '',
+                                                ),
+                                                ' ',
+                                                '',
+                                            ),
+                                            '-',
+                                            '',
+                                        ),
+                                        '(',
+                                        '',
+                                    ),
+                                    ')',
+                                    '',
+                                ),
+                                10,
+                            ),
+                            identifierDigits,
+                        ),
+                    ],
+                },
+            })
+
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found with provided identifier.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+            if (user.toJSON().otp !== otp) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid OTP',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            const hashedPassword = await hashPassword(newPassword)
+
+            await user.update({ password: hashedPassword, otp: null })
+
+            return {
+                response: encryptPayload({
+                    message: 'Password reset successful',
+                }),
+            }
+        } catch (error) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to reset password. ' + error.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Get('details')
+    async getDetails(
+        @Headers('authorization') authHeader: string,
+        @Headers('x-encrypted-id') encryptedId?: string,
+    ) {
+        try {
+            let userId: number | null = null
+
+            if (authHeader) {
+                const token = authHeader?.replace('Bearer ', '') || ''
+                if (!token) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Invalid authorization header.',
+                            }),
+                        },
+                        HttpStatus.BAD_REQUEST,
+                    )
+                }
+
+                // Verify token
+                jwt.verify(token, JWT_SECRET)
+                const session = await UserSession.findOne({
+                    where: {
+                        token,
+                        isExpired: false,
+                    },
+                })
+                if (!session) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Session not found or expired.',
+                            }),
+                        },
+                        HttpStatus.FORBIDDEN,
+                    )
+                }
+
+                // Check expiry
+                if (new Date() > session.expiry) {
+                    await session.update({ isExpired: true })
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Session expired.',
+                            }),
+                        },
+                        HttpStatus.FORBIDDEN,
+                    )
+                }
+
+                userId = session.toJSON().userId
+            } else if (encryptedId) {
+                const decryptedBody = decryptPayload(encryptedId)
+                userId = decryptedBody.id
+            } else {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Authorization header or X-Encrypted-Id header is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            const user = await User.findByPk(userId, {
+                attributes: { exclude: ['password'] },
+            })
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            const encryptedResponse = {
+                response: encryptPayload({ status: 'ok', user: user }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to fetch user details. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('login')
+    async login(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const identifierDigits = decryptedBody.identifier
+                .replace(/\D/g, '')
+                .slice(-10)
+
+            const user = await User.findOne({
+                where: {
+                    [Op.or]: [
+                        { username: decryptedBody.identifier },
+                        { email: decryptedBody.identifier },
+                        sequelize.where(
+                            sequelize.fn(
+                                'RIGHT',
+                                sequelize.fn(
+                                    'REPLACE',
+                                    sequelize.fn(
+                                        'REPLACE',
+                                        sequelize.fn(
+                                            'REPLACE',
+                                            sequelize.fn(
+                                                'REPLACE',
+                                                sequelize.fn(
+                                                    'REPLACE',
+                                                    sequelize.col('phone'),
+                                                    '+',
+                                                    '',
+                                                ),
+                                                ' ',
+                                                '',
+                                            ),
+                                            '-',
+                                            '',
+                                        ),
+                                        '(',
+                                        '',
+                                    ),
+                                    ')',
+                                    '',
+                                ),
+                                10,
+                            ),
+                            identifierDigits,
+                        ),
+                    ],
+                },
+            })
+            if (user) {
+                await user.update({ otp: null })
+            }
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid username, email or phone number.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            const valid = comparePassword(
+                decryptedBody.password,
+                user.toJSON().password,
+            )
+            if (!valid) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid password.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            const token = jwt.sign(
+                { id: user.toJSON().id, username: user.toJSON().username },
+                JWT_SECRET,
+                { expiresIn: '1d' },
+            ) // Save user session
+            await UserSession.create({
+                userId: user.toJSON().id,
+                token,
+                // expiry will auto-default to 1 day later via the model definition
+            })
+            const encryptedResponse = {
+                response: encryptPayload({
+                    token,
+                    user: {
+                        id: user.id,
+                        username: user.username,
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone,
+                    },
+                }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to login. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('verify-token')
+    async verifyToken(@Body() body: { request: string }) {
+        try {
+            // 1. Decrypt token
+            const decryptedBody = decryptPayload(body.request)
+            const decryptedToken = decryptedBody.token
+
+            // 2. Verify JWT validity (signature + expiry)
+            jwt.verify(decryptedToken, JWT_SECRET)
+
+            // 3. Check if token exists in DB and is not expired
+            const session = await UserSession.findOne({
+                where: {
+                    token: decryptedToken,
+                    isExpired: false,
+                },
+            })
+
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // 4. Optionally check expiry date (in case JWT doesn't handle it fully)
+            if (new Date() > session.expiry) {
+                // Auto-mark session as expired
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    { error: 'Session expired' },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // 5. Check if token expires within 1 hour, renew if so
+            const now = new Date()
+            const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000) // 1 hour in milliseconds
+            let newToken = null
+            if (session.expiry <= oneHourFromNow) {
+                // Renew token: generate new JWT and update session expiry
+                const user = await User.findByPk(session.toJSON().userId)
+                if (!user) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'User not found.',
+                            }),
+                        },
+                        HttpStatus.NOT_FOUND,
+                    )
+                }
+                newToken = jwt.sign(
+                    { id: user.toJSON().id, username: user.toJSON().username },
+                    JWT_SECRET,
+                    { expiresIn: '1d' },
+                )
+                // Update session with new token and expiry
+                await session.update({
+                    token: newToken,
+                    expiry: new Date(now.getTime() + 24 * 60 * 60 * 1000), // 1 day from now
+                })
+            }
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    status: 'ok',
+                    ...(newToken && { newToken }),
+                }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    { error: encryptPayload({ error: 'Token expired' }) },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            throw new HttpException(
+                { error: encryptPayload({ error: 'Invalid token' }) },
+                HttpStatus.FORBIDDEN,
+            )
+        }
+    }
+
+    @Post('logout')
+    async logout(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request) as {
+                token: string
+            }
+            const token = decryptedBody.token
+            if (!token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+            // Find the session and mark it as expired
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or already expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            // Update all existing sessions of the user to isExpired: true
+            await UserSession.update({ isExpired: true }, { where: { userId } })
+
+            const encryptedResponse = {
+                response: encryptPayload({ status: 'ok' }),
+            }
+            return encryptedResponse
+        } catch (error: unknown) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to logout. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('default-address')
+    async getDefaultAddress(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const token = decryptedBody.token
+            if (!token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and get session
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            // Get default address
+            const defaultAddress = await UserAddress.findOne({
+                where: {
+                    userId,
+                    isDefault: true,
+                },
+                include: [User],
+            })
+            if (!defaultAddress) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'No default address found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            const addressWithEmail = {
+                ...defaultAddress.toJSON(),
+                email: defaultAddress.toJSON().User?.email,
+            }
+            delete addressWithEmail?.User
+            const encryptedResponse = {
+                response: encryptPayload(addressWithEmail),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            console.error(error, 'error')
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to get default address. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('address')
+    async createOrUpdateAddress(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const token = decryptedBody.token
+            if (!token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and get session
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            const {
+                addressId,
+                name,
+                addressLine1,
+                city,
+                state,
+                country,
+                pincode,
+                phone,
+                isDefault,
+            } = decryptedBody
+
+            if (addressId) {
+                // Update existing address
+                const address = await UserAddress.findOne({
+                    where: { id: addressId, userId },
+                })
+                if (!address) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Address not found.',
+                            }),
+                        },
+                        HttpStatus.NOT_FOUND,
+                    )
+                }
+
+                if (isDefault) {
+                    // Unset other default addresses
+                    await UserAddress.update(
+                        { isDefault: false },
+                        { where: { userId, isDefault: true } },
+                    )
+                }
+                await address.reload()
+                await address.update({
+                    name,
+                    addressLine1,
+                    city,
+                    state,
+                    country,
+                    pincode,
+                    phone,
+                    isDefault,
+                })
+
+                // Ensure there's a default address
+                const hasDefault = await UserAddress.findOne({
+                    where: { userId, isDefault: true },
+                })
+                if (!hasDefault) {
+                    const latestAddress = await UserAddress.findOne({
+                        where: { userId },
+                        order: [['id', 'DESC']],
+                    })
+                    if (latestAddress) {
+                        await latestAddress.update({ isDefault: true })
+                    }
+                }
+
+                const encryptedResponse = {
+                    response: encryptPayload({
+                        status: 'ok',
+                        address: address,
+                    }),
+                }
+                return encryptedResponse
+            } else {
+                // Create new address
+                if (isDefault) {
+                    // Unset other default addresses
+                    await UserAddress.update(
+                        { isDefault: false },
+                        { where: { userId, isDefault: true } },
+                    )
+                }
+
+                const newAddress = await UserAddress.create({
+                    userId,
+                    name,
+                    addressLine1,
+                    city,
+                    state,
+                    country,
+                    pincode,
+                    phone,
+                    isDefault,
+                })
+
+                const encryptedResponse = {
+                    response: encryptPayload({
+                        status: 'ok',
+                        address: newAddress,
+                    }),
+                }
+                return encryptedResponse
+            }
+        } catch (error: any) {
+            console.error(error, 'error')
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to create or update address. ' +
+                            error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Get('addresses')
+    async getAddresses(@Headers('authorization') authHeader: string) {
+        try {
+            const token = authHeader?.replace('Bearer ', '') || ''
+            if (!token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and get session
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            // Get all addresses for the user
+            const addresses = await UserAddress.findAll({
+                where: { userId },
+                include: [User],
+            })
+
+            const addressesWithEmail = addresses
+                .map((address) => {
+                    const addr = address.toJSON()
+                    return {
+                        ...addr,
+                        email: addr.User?.email,
+                    }
+                })
+                .map((addr) => {
+                    delete addr.User
+                    return addr
+                })
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    addresses: addressesWithEmail,
+                }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            console.error(error, 'error')
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to get addresses. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Delete('address')
+    async deleteAddress(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const token = decryptedBody.token
+            const addressId = decryptedBody.addressId
+            if (!token || !addressId) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token and address id are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and get session
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            // Find the address
+            const address = await UserAddress.findOne({
+                where: { id: addressId, userId },
+            })
+            if (!address) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Address not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Check if the address is linked to any orders
+            const linkedOrders = await Order.findAll({
+                where: { userAddressId: addressId },
+            })
+
+            if (linkedOrders.length > 0) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Cannot delete address as it is linked to existing orders.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Get all addresses for the user
+            const allAddresses = await UserAddress.findAll({
+                where: { userId },
+            })
+
+            if (allAddresses.length === 1) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Cannot delete the only address. Please add another address before deleting this one.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // If deleting the default address, set another as default
+            if (address.toJSON().isDefault) {
+                const otherAddresses = allAddresses.filter(
+                    (addr) => addr.id !== addressId,
+                )
+                if (otherAddresses.length > 0) {
+                    await otherAddresses[0].update({ isDefault: true })
+                }
+            }
+
+            // Delete the address
+            await address.destroy()
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    status: 'ok',
+                    message: 'Address deleted successfully.',
+                }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            console.error(error, 'error')
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to delete address. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+}
