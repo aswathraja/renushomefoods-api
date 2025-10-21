@@ -1,8 +1,8 @@
 import { Sequelize } from 'sequelize'
 import './models'
 // Database configuration
-export const sequelize = new Sequelize('renushomefoods', 'root', 'rightman', {
-    host: 'localhost',
+export const sequelize = new Sequelize('', '', '', {
+    host: '',
     dialect: 'mysql',
     logging: false, // Set to true for SQL query logging
 })
