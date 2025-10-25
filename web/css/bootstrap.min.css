@@ -19,7 +19,7 @@
     --bs-white: #fff;
     --bs-gray: #6c757d;
     --bs-gray-dark: #343a40;
-    --bs-primary: #2c6417;
+    --bs-primary: #2e6419;
     --bs-secondary: #6c757d;
     --bs-success: #198754;
     --bs-info: #0dcaf0;
@@ -6799,13 +6799,14 @@ fieldset:disabled .btn {
     word-break: break-word !important;
 }
 .text-primary {
-    color: #2e6419 !important;
+    color: var(--bs-primary) !important;
 }
+
 .text-secondary {
     color: #fff !important;
 }
 .text-success {
-    color: #198754 !important;
+    color: var(--bs-success) !important;
 }
 .text-info {
     color: #0dcaf0 !important;
@@ -6841,7 +6842,7 @@ fieldset:disabled .btn {
     color: inherit !important;
 }
 .bg-primary {
-    background-color: #2e6419 !important;
+    background-color: var(--top-bar-bg) !important;
 }
 .bg-secondary {
     background-color: #6c757d !important;

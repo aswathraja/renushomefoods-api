@@ -11,8 +11,9 @@ import {
 import * as CryptoES from 'crypto-es'
 import * as jwt from 'jsonwebtoken'
 import { Op, Sequelize, UniqueConstraintError } from 'sequelize'
+import { AppService } from './app.service'
 import { sequelize } from './db'
-import { Order, User, UserAddress, UserSession } from './models'
+import { Order, Role, User, UserAddress, UserRole, UserSession } from './models'
 import { decryptPayload, encryptPayload } from './utils'
 
 function hashPassword(password: string): string {
@@ -27,6 +28,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
 @Controller('user')
 export class UserController {
+    constructor(private readonly appService: AppService) {}
     @Post('register')
     async register(@Body() body: { request: string }) {
         try {
@@ -122,17 +124,104 @@ export class UserController {
     async update(@Body() body: { request?: string }) {
         try {
             const decryptedBody = decryptPayload(body.request)
-            const user = await User.findByPk(decryptedBody.id)
-            if (!user) return { error: 'User not found.' }
-            if (decryptedBody.password) {
-                decryptedBody.password = hashPassword(decryptedBody.password)
+            const { token, name, username, email, phone } = decryptedBody
+
+            if (!token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
             }
-            await user.update(decryptedBody)
+
+            // Verify token
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+            const user = await User.findByPk(userId)
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Check for uniqueness of username, email, phone (excluding current user)
+            const existingUser = await User.findOne({
+                where: {
+                    [Op.or]: [{ username }, { email }, { phone }],
+                    id: { [Op.ne]: userId },
+                },
+            })
+
+            if (existingUser) {
+                const errors: Record<string, string> = {}
+                const existing = existingUser.toJSON()
+                if (existing.username === username) {
+                    errors.username = 'Username is already in use'
+                }
+                if (existing.email === email) {
+                    errors.email = 'Email is already in use'
+                }
+                if (existing.phone === phone) {
+                    errors.phone = 'Phone number is already in use'
+                }
+                throw new HttpException(
+                    {
+                        error: encryptPayload(errors),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Update user
+            await user.update({ name, username, email, phone })
+
             const encryptedResponse = {
                 response: encryptPayload({ status: 'ok', user: user }),
             }
             return encryptedResponse
-        } catch (error) {
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
             throw new HttpException(
                 {
                     error: encryptPayload({
@@ -329,15 +418,25 @@ export class UserController {
             }
 
             // Generate 4-digit OTP
-            const otp = Math.floor(1000 + Math.random() * 9000).toString()
+            const otp = this.appService.generateRandomNumber(4)
 
             // Update OTP in the database
             await user.update({ otp })
 
+            // Send OTP email
+            await this.appService.sendMail({
+                to: user.toJSON().email,
+                subject: "Renu's Home Foods - Password Reset OTP Verification",
+                message: `Your OTP to reset your password for your account with with ${user.toJSON().email} and phone number ${user.toJSON().phone} is ${otp}. This OTP is valid for 10 minutes.`,
+                userFullName: user.toJSON().name,
+            })
+
+            // Mask the email for partial visibility
+            const maskedEmail = this.appService.maskEmail(user.toJSON().email)
+
             return {
                 response: encryptPayload({
-                    message: 'OTP has been sent to your registered email id.',
-                    otp, // ⚠️ Return this only for testing – remove in production
+                    message: `OTP has been sent to your registered email id : ${maskedEmail}.`,
                 }),
             }
         } catch (error) {
@@ -468,12 +567,11 @@ export class UserController {
 
     @Get('details')
     async getDetails(
-        @Headers('authorization') authHeader: string,
+        @Headers('Authorization') authHeader: string,
         @Headers('x-encrypted-id') encryptedId?: string,
     ) {
         try {
             let userId: number | null = null
-
             if (authHeader) {
                 const token = authHeader?.replace('Bearer ', '') || ''
                 if (!token) {
@@ -536,6 +634,13 @@ export class UserController {
 
             const user = await User.findByPk(userId, {
                 attributes: { exclude: ['password'] },
+                include: [
+                    {
+                        model: Role,
+                        as: 'roles',
+                        through: { attributes: [] }, // exclude junction table attributes
+                    },
+                ],
             })
             if (!user) {
                 throw new HttpException(
@@ -548,8 +653,13 @@ export class UserController {
                 )
             }
 
+            const userWithRoles = {
+                ...user.toJSON(),
+                roles: user.toJSON().roles || [],
+            }
+
             const encryptedResponse = {
-                response: encryptPayload({ status: 'ok', user: user }),
+                response: encryptPayload({ status: 'ok', user: userWithRoles }),
             }
             return encryptedResponse
         } catch (error: any) {
@@ -629,8 +739,66 @@ export class UserController {
                     ],
                 },
             })
-            if (user) {
-                await user.update({ otp: null })
+            if (user.toJSON().password === '') {
+                await user.update({
+                    otp: this.appService.generateRandomNumber(4),
+                })
+                const updatedUser = await User.findOne({
+                    where: {
+                        [Op.or]: [
+                            { username: decryptedBody.identifier },
+                            { email: decryptedBody.identifier },
+                            sequelize.where(
+                                sequelize.fn(
+                                    'RIGHT',
+                                    sequelize.fn(
+                                        'REPLACE',
+                                        sequelize.fn(
+                                            'REPLACE',
+                                            sequelize.fn(
+                                                'REPLACE',
+                                                sequelize.fn(
+                                                    'REPLACE',
+                                                    sequelize.fn(
+                                                        'REPLACE',
+                                                        sequelize.col('phone'),
+                                                        '+',
+                                                        '',
+                                                    ),
+                                                    ' ',
+                                                    '',
+                                                ),
+                                                '-',
+                                                '',
+                                            ),
+                                            '(',
+                                            '',
+                                        ),
+                                        ')',
+                                        '',
+                                    ),
+                                    10,
+                                ),
+                                identifierDigits,
+                            ),
+                        ],
+                    },
+                })
+                await this.appService.sendMail({
+                    to: updatedUser.toJSON().email,
+                    subject:
+                        "Renu's Home Foods - Password Reset OTP Verification",
+                    message: `Your OTP to reset your password for your account with with ${updatedUser.toJSON().email} and phone number ${updatedUser.toJSON().phone} is ${updatedUser.toJSON().otp}. This OTP is valid for 10 minutes.`,
+                    userFullName: updatedUser.toJSON().name,
+                })
+                const maskedEmail = this.appService.maskEmail(
+                    updatedUser.toJSON().email,
+                )
+                return {
+                    response: encryptPayload({
+                        message: `OTP has been sent to your registered email id : ${maskedEmail}.`,
+                    }),
+                }
             }
             if (!user) {
                 throw new HttpException(
@@ -737,9 +905,18 @@ export class UserController {
             const now = new Date()
             const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000) // 1 hour in milliseconds
             let newToken = null
+            const user = await User.findByPk(session.toJSON().userId, {
+                include: [
+                    {
+                        model: Role,
+                        as: 'roles',
+                        attributes: { exclude: ['id'] }, // exclude 'id' from Role model
+                        through: { attributes: [] }, // exclude junction table attributes
+                    },
+                ],
+            })
             if (session.expiry <= oneHourFromNow) {
                 // Renew token: generate new JWT and update session expiry
-                const user = await User.findByPk(session.toJSON().userId)
                 if (!user) {
                     throw new HttpException(
                         {
@@ -766,6 +943,7 @@ export class UserController {
                 response: encryptPayload({
                     status: 'ok',
                     ...(newToken && { newToken }),
+                    roles: [...user.toJSON().roles],
                 }),
             }
             return encryptedResponse
@@ -1225,6 +1403,300 @@ export class UserController {
                 {
                     error: encryptPayload({
                         error: 'Failed to get addresses. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('change-password')
+    async changePassword(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { token, currentPassword, newPassword } = decryptedBody
+
+            if (!token || !currentPassword || !newPassword) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token, current password, and new password are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            // Get user
+            const user = await User.findByPk(userId)
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Verify current password
+            const valid = comparePassword(
+                currentPassword,
+                user.toJSON().password,
+            )
+            if (!valid) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Current password is incorrect.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            // Hash new password
+            const hashedNewPassword = hashPassword(newPassword)
+
+            // Update password
+            await user.update({ password: hashedNewPassword })
+
+            // Expire all other sessions for the user except the current one
+            await UserSession.update(
+                { isExpired: true },
+                {
+                    where: {
+                        userId,
+                        token: { [Op.ne]: token },
+                    },
+                },
+            )
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    status: 'ok',
+                    message: 'Password changed successfully.',
+                }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            console.error(error, 'error')
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to change password. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Get('roles')
+    async getUserRoles(@Headers('Authorization') authHeader: string) {
+        try {
+            const token = authHeader?.replace('Bearer ', '') || ''
+            if (!token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Authorization header is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token
+            jwt.verify(token, JWT_SECRET)
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Check expiry
+            if (new Date() > session.expiry) {
+                await session.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const userId = session.toJSON().userId
+
+            const user = await User.findByPk(userId, {
+                include: [
+                    {
+                        model: Role,
+                        as: 'roles',
+                        through: { attributes: [] }, // exclude junction table attributes
+                    },
+                ],
+            })
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            const roles = user.toJSON().roles || []
+            const encryptedResponse = {
+                response: encryptPayload({ roles }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            if (error.name === 'TokenExpiredError') {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Token expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to get user roles. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('roles')
+    async updateUserRoles(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { userId, roleIds } = decryptedBody
+
+            if (!userId || !Array.isArray(roleIds)) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'userId and roleIds array are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            const user = await User.findByPk(userId)
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Remove existing roles
+            await UserRole.destroy({ where: { userId } })
+
+            // Add new roles
+            if (roleIds.length > 0) {
+                const userRoles = roleIds.map((roleId: number) => ({
+                    userId,
+                    roleId,
+                }))
+                await UserRole.bulkCreate(userRoles)
+            }
+
+            const encryptedResponse = {
+                response: encryptPayload({ status: 'ok' }),
+            }
+            return encryptedResponse
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to update user roles. ' + error?.message,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

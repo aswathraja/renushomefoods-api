@@ -576,3 +576,81 @@ UserAddress.hasMany(Order, { foreignKey: 'userAddressId' })
 // Optional – if you want to link messages with users
 User.hasMany(Message, { foreignKey: 'userId', as: 'messages' })
 Message.belongsTo(User, { foreignKey: 'userId', as: 'user' })
+
+// Role Model
+export class Role extends Model {
+    public id!: number
+    public name!: string
+}
+
+Role.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        name: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            unique: true,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'roles',
+        timestamps: false,
+    },
+)
+
+// UserRole Model (junction table for many-to-many)
+export class UserRole extends Model {
+    public id!: number
+    public userId!: number
+    public roleId!: number
+}
+
+UserRole.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        userId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: User,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        roleId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Role,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'userroles',
+        timestamps: false,
+    },
+)
+
+// Many-to-many associations
+User.belongsToMany(Role, {
+    through: UserRole,
+    foreignKey: 'userId',
+    as: 'roles',
+})
+Role.belongsToMany(User, {
+    through: UserRole,
+    foreignKey: 'roleId',
+    as: 'users',
+})

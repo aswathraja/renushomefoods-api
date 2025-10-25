@@ -10,6 +10,7 @@ import {
 import * as jwt from 'jsonwebtoken'
 import * as sequelize from 'sequelize'
 import { Op } from 'sequelize'
+import { AppService } from './app.service'
 import {
     Cart,
     CartProduct,
@@ -26,6 +27,8 @@ import { decryptPayload, encryptPayload } from './utils'
 
 @Controller('order')
 export class OrderController {
+    constructor(private appService: AppService) {}
+
     @Post('get-order-details')
     async getOrderDetails(@Body() body: any) {
         try {
@@ -350,12 +353,14 @@ export class OrderController {
             }
             if (!user) {
                 // Create new user
+                const otp = this.appService.generateRandomNumber(4)
                 user = await User.create({
                     name: name || 'User',
                     username: normalizedPhone,
                     email: email || '', // No email in order
                     phone: normalizedPhone,
                     password: '', // Assuming password is set later or not required
+                    otp,
                 })
 
                 user = await User.findOne({
@@ -610,6 +615,7 @@ export class OrderController {
                 }
             }
             if (!user) {
+                const otp = this.appService.generateRandomNumber(4)
                 // Create new user
                 user = await User.create({
                     name: name || 'Unknown',
@@ -617,6 +623,7 @@ export class OrderController {
                     email: email, // No email in order
                     phone: normalizedPhone,
                     password: '', // Assuming password is set later or not required
+                    otp,
                 })
                 user = await User.findOne({
                     where: {

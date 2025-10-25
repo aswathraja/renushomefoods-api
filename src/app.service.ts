@@ -9,9 +9,28 @@ export class AppService {
     }
 
     /**
+     * Generates a random number of the specified length.
+     * @param length The length of the random number to generate.
+     * @returns A string representation of the random number.
+     */
+    public generateRandomNumber(length: number): string {
+        if (length <= 0) {
+            throw new Error('Length must be a positive integer.')
+        }
+        const min = Math.pow(10, length - 1)
+        const max = Math.pow(10, length) - 1
+        const randomNumber = Math.floor(Math.random() * (max - min + 1)) + min
+        return randomNumber.toString()
+    }
+
+    public maskEmail(email: string): string {
+        return email.replace(/(.{2}).*(@.*)/, '$1***$2')
+    }
+
+    /**
      * Sends an HTML email using Nodemailer with a responsive template.
      */
-    async sendMail({
+    public async sendMail({
         to,
         subject,
         message,
