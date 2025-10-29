@@ -165,7 +165,7 @@ export class AppService {
                 html,
             })
 
-            console.log('✅ Email sent:', info.messageId)
+            console.log('✅ Email sent:')
             return { success: true, messageId: info.messageId }
         } catch (error) {
             console.error('❌ Failed to send email:', error)

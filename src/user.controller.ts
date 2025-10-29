@@ -84,6 +84,16 @@ export class UserController {
                 isDefault: true, // assuming this is the first address
             })
 
+            // Assign 'Buyer' role (roleId 2) to the user
+            let buyerRole = await Role.findByPk(2)
+            if (!buyerRole) {
+                buyerRole = await Role.create({ id: 2, name: 'Buyer' })
+            }
+            await UserRole.create({
+                userId: user.toJSON().id,
+                roleId: 2,
+            })
+
             const encryptedResponse = {
                 response: encryptPayload({ status: 'ok', user }),
             }

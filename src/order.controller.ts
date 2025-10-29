@@ -819,7 +819,6 @@ export class OrderController {
             const userSession = await UserSession.findOne({
                 where: { token, isExpired: false },
             })
-
             if (!userSession) {
                 throw new HttpException(
                     {
@@ -928,6 +927,356 @@ export class OrderController {
                 {
                     error: encryptPayload({
                         error: 'Failed to fetch user orders. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('cancel-order')
+    async cancelOrder(@Body() body: any) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody
+
+            if (!id || !token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order ID and Token are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and find user
+            jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret')
+            const userSession = await UserSession.findOne({
+                where: { token, isExpired: false },
+            })
+            if (!userSession) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid or expired token.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+            // Check expiry
+            if (new Date() > userSession.expiry) {
+                await userSession.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            const userId = userSession.toJSON().userId
+            const user = await User.findByPk(userId)
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            // Find order with associations
+            const order = await Order.findByPk(id, {
+                include: [{ model: User, as: 'user' }, { model: Cart }],
+            })
+
+            if (!order) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order not found.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check authorization: user owns the order or is admin (roleId 1)
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const isAdmin = user.toJSON().roleId === 1
+            if (!isOwner && !isAdmin) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Unauthorized to cancel this order.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Update order status to 'Cancelled'
+            await order.update({ status: 'Cancelled' })
+
+            // Update cart status to 'Cancelled'
+            const cart = order.toJSON().Cart
+            if (cart) {
+                await Cart.update(
+                    { status: 'Cancelled' },
+                    { where: { id: cart.id } },
+                )
+            }
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    message: 'Order cancelled successfully.',
+                    orderId: id,
+                }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            console.error('Error in cancelOrder:', error)
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to cancel order. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('reorder')
+    async reorder(@Body() body: any) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody
+
+            if (!id || !token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order ID and Token are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and find user
+            jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret')
+            const userSession = await UserSession.findOne({
+                where: { token, isExpired: false },
+            })
+            if (!userSession) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid or expired token.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+            // Check expiry
+            if (new Date() > userSession.expiry) {
+                await userSession.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            const userId = userSession.toJSON().userId
+            const user = await User.findByPk(userId)
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            // Find order with cart and cart products
+            const order = await Order.findByPk(id, {
+                include: [
+                    {
+                        model: Cart,
+                        include: [
+                            {
+                                model: CartProduct,
+                                include: [PriceList],
+                            },
+                        ],
+                    },
+                ],
+            })
+
+            if (!order) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order not found.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check authorization: user owns the order or is admin (roleId 1)
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const isAdmin = user.toJSON().roleId === 1
+            if (!isOwner && !isAdmin) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Unauthorized to reorder this order.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            const cart = order.toJSON().Cart
+            if (!cart || !cart.CartProducts || cart.CartProducts.length === 0) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'No products found in the order to reorder.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check if user already has an existing cart
+            let existingCart = await Cart.findOne({
+                where: {
+                    userId,
+                    status: 'Created',
+                },
+                include: [
+                    {
+                        model: CartProduct,
+                        include: [PriceList],
+                    },
+                ],
+            })
+
+            let newCart
+            let createdProducts = []
+            let updatedProducts = []
+
+            if (existingCart) {
+                // Update existing cart
+                newCart = existingCart
+                await existingCart.update({
+                    updatedBy: user.toJSON().name || 'User',
+                    updatedAt: new Date(),
+                })
+
+                // Get existing cart products for updating quantities
+                const existingCartProducts =
+                    existingCart.toJSON().CartProducts || []
+
+                // Process each product from the original order
+                for (const cp of cart.CartProducts) {
+                    const existingProduct = existingCartProducts.find(
+                        (ecp: any) =>
+                            ecp.productId === cp.productId &&
+                            ecp.priceListId === cp.priceListId,
+                    )
+
+                    if (existingProduct) {
+                        // Update quantity if product already exists
+                        const newQuantity =
+                            existingProduct.quantity + cp.quantity
+                        await CartProduct.update(
+                            { quantity: newQuantity },
+                            { where: { id: existingProduct.id } },
+                        )
+                        updatedProducts.push(existingProduct.id)
+                    } else {
+                        // Create new cart product if it doesn't exist
+                        const createdProduct = await CartProduct.create({
+                            cartId: existingCart.toJSON().id,
+                            productId: cp.productId,
+                            priceListId: cp.priceListId,
+                            quantity: cp.quantity,
+                        })
+                        createdProducts.push(createdProduct)
+                    }
+                }
+            } else {
+                // Create new cart if none exists
+                newCart = await Cart.create({
+                    userId,
+                    createdBy: user.toJSON().name || 'User',
+                    updatedBy: user.toJSON().name || 'User',
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    status: 'Created',
+                })
+
+                // Create cart products from the original order
+                for (const cp of cart.CartProducts) {
+                    const createdProduct = await CartProduct.create({
+                        cartId: newCart.toJSON().id,
+                        productId: cp.productId,
+                        priceListId: cp.priceListId,
+                        quantity: cp.quantity,
+                    })
+                    createdProducts.push(createdProduct)
+                }
+            }
+            const totalProductsAdded =
+                createdProducts.length + updatedProducts.length
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    message: existingCart
+                        ? 'Products added to existing cart successfully.'
+                        : 'Order reordered successfully.',
+                    cartId: newCart.toJSON().id,
+                    productsCount: totalProductsAdded,
+                    createdProducts: createdProducts.length,
+                    updatedProducts: updatedProducts.length,
+                }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            console.error('Error in reorder:', error)
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to reorder. ' + errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
