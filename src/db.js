@@ -1,11 +1,5 @@
-const { Sequelize } = require('sequelize');
-
-// Database configuration
-const sequelize = new Sequelize('renushomefoods', 'root', 'root', {
-  host: 'localhost',
-  dialect: 'mysql',
-  logging: false, // Set to true for SQL query logging
-});
+const { sequelize } = require('./database');
+require('./models');
 
 async function connectToDatabase() {
   try {
