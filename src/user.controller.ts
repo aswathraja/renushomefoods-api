@@ -748,6 +748,14 @@ export class UserController {
                         ),
                     ],
                 },
+                include: [
+                    {
+                        model: Role,
+                        as: 'roles',
+                        attributes: { exclude: ['id'] }, // exclude 'id' from Role model
+                        through: { attributes: [] }, // exclude junction table attributes
+                    },
+                ],
             })
             if (user.toJSON().password === '') {
                 await user.update({
@@ -848,12 +856,13 @@ export class UserController {
                 response: encryptPayload({
                     token,
                     user: {
-                        id: user.id,
-                        username: user.username,
-                        name: user.name,
-                        email: user.email,
-                        phone: user.phone,
+                        id: user.toJSON().id,
+                        username: user.toJSON().username,
+                        name: user.toJSON().name,
+                        email: user.toJSON().email,
+                        phone: user.toJSON().phone,
                     },
+                    roles: user.toJSON().roles,
                 }),
             }
             return encryptedResponse

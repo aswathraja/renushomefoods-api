@@ -514,6 +514,11 @@ Order.init(
             type: DataTypes.TEXT,
             allowNull: true,
         },
+        deliveryNote: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            defaultValue: '',
+        },
         shippingMethod: {
             type: DataTypes.STRING,
             allowNull: false,
