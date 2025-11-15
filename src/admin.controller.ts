@@ -10,6 +10,7 @@ import {
 import * as jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
 import { sequelize } from './db'
+import { logger } from './logger'
 import {
     Cart,
     CartProduct,
@@ -19,6 +20,7 @@ import {
     Role,
     User,
     UserAddress,
+    UserRole,
     UserSession,
 } from './models'
 import { decryptPayload, encryptPayload } from './utils'
@@ -187,7 +189,16 @@ export class AdminController {
                 response: encryptPayload(response),
             }
         } catch (error) {
-            console.error('Error in getDashboardKPIs:', error)
+            const cleanMessage =
+                'Error in getDashboardKPIs: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -320,7 +331,16 @@ export class AdminController {
                 response: encryptPayload(chartData),
             }
         } catch (error) {
-            console.error('Error in getChartData:', error)
+            const cleanMessage =
+                'Error in getChartData: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -414,6 +434,7 @@ export class AdminController {
                         deliveryPhone: row.deliveryPhone,
                         customerName: row.customerName,
                         customerPhone: row.customerPhone,
+                        customerEmail: row.customerEmail,
                         notes: row.notes,
                         deliveryNote: row.deliveryNote,
                         products: [],
@@ -444,7 +465,16 @@ export class AdminController {
                 response: encryptPayload({ orders }),
             }
         } catch (error) {
-            console.error('Error in fetchOrders:', error)
+            const cleanMessage =
+                'Error in fetchOrders: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -470,13 +500,22 @@ export class AdminController {
 
             // Fetch all users with only name and phone
             const users = await User.findAll({
-                attributes: ['id', 'name', 'phone'],
+                attributes: ['id', 'name', 'phone', 'email'],
             })
             return {
                 response: encryptPayload({ users }),
             }
         } catch (error) {
-            console.error('Error in getUsers:', error)
+            const cleanMessage =
+                'Error in getUsers: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -521,7 +560,16 @@ export class AdminController {
                 response: encryptPayload({ addresses }),
             }
         } catch (error) {
-            console.error('Error in getUserAddresses:', error)
+            const cleanMessage =
+                'Error in getUserAddresses: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -567,7 +615,16 @@ export class AdminController {
                 response: encryptPayload({ addresses }),
             }
         } catch (error) {
-            console.error('Error in getUserAddress:', error)
+            const cleanMessage =
+                'Error in getUserAddress: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -598,7 +655,6 @@ export class AdminController {
             const decryptedBody = decryptPayload(body.request)
             const {
                 orderId,
-                userId,
                 userAddressId,
                 cartId,
                 orderDate,
@@ -614,25 +670,44 @@ export class AdminController {
                 deliveryPhone,
                 customerName,
                 customerPhone,
+                customerEmail,
                 products,
-                orderTotal,
+                notes,
                 deliveryNote,
                 paymentMethod,
             } = decryptedBody
-
             // Step 1: Check if user exists by customerPhone, if not create user
             let user = await User.findOne({
                 where: { phone: customerPhone },
             })
+            const isNewUser = Boolean(user)
             if (!user) {
                 const otp = Math.floor(1000 + Math.random() * 9000).toString()
                 user = await User.create({
                     name: customerName,
                     username: customerPhone,
-                    email: '', // Assuming email not provided
+                    email:
+                        customerEmail ||
+                        customerName.toLowerCase().replace(/\s+/gim, '') +
+                            '@renushomefoods.com', // Assuming email not provided
                     phone: customerPhone,
                     password: '',
                     otp,
+                })
+                user = await User.findOne({
+                    where: {
+                        phone: customerPhone,
+                        name: customerName,
+                    },
+                })
+                // Assign 'Buyer' role (roleId 2) to the user
+                let buyerRole = await Role.findByPk(2)
+                if (!buyerRole) {
+                    buyerRole = await Role.create({ id: 2, name: 'Buyer' })
+                }
+                await UserRole.create({
+                    userId: user.toJSON().id,
+                    roleId: 2,
                 })
             }
 
@@ -640,7 +715,7 @@ export class AdminController {
             let address
             if (userAddressId) {
                 address = await UserAddress.findByPk(userAddressId)
-                if (!address || address.userId !== user.id) {
+                if (!address || address.toJSON().userId !== user.toJSON().id) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
@@ -653,7 +728,7 @@ export class AdminController {
             } else {
                 // Create new address
                 address = await UserAddress.create({
-                    userId: user.id,
+                    userId: user.toJSON().id,
                     name: deliveryName,
                     addressLine1,
                     city,
@@ -661,7 +736,19 @@ export class AdminController {
                     country,
                     pincode,
                     phone: deliveryPhone,
-                    isDefault: true,
+                    isDefault: !isNewUser,
+                })
+                address = await UserAddress.findOne({
+                    where: {
+                        name: deliveryName,
+                        userId: user.toJSON().id,
+                        city,
+                        state,
+                        country,
+                        pincode,
+                        phone: deliveryPhone,
+                        isDefault: !isNewUser,
+                    },
                 })
             }
             // Step 3: Handle cart
@@ -772,9 +859,9 @@ export class AdminController {
                 }
                 await order.update({
                     userId: user.id,
-                    userAddressId: address.id,
+                    userAddressId: address.toJSON().id,
                     cartId: cart.id,
-                    notes: '', // Assuming no notes
+                    notes: notes || '', // Assuming no notes
                     deliveryNote: deliveryNote || '',
                     shippingMethod,
                     paymentMethod: paymentMethod, // Assuming default
@@ -784,10 +871,11 @@ export class AdminController {
                 })
             } else {
                 order = await Order.create({
-                    userId: user.id,
-                    userAddressId: address.id,
-                    cartId: cart.id,
-                    notes: '',
+                    userId: user.toJSON().id,
+                    userAddressId: address.toJSON().id,
+                    cartId: cart.toJSON().id,
+                    notes: notes || '',
+                    deliveryNote: deliveryNote || '',
                     shippingMethod,
                     paymentMethod: paymentMethod,
                     status: orderStatus,
@@ -795,16 +883,27 @@ export class AdminController {
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                 })
             }
-
             const encryptedResponse = {
                 response: encryptPayload({
                     orderId: order.id,
+                    cartId: cart.id,
+                    userAddressId: address.toJSON().id,
+                    userId: user.toJSON().id,
                     message: 'Order created/updated successfully.',
                 }),
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in createOrUpdateOrder:', error)
+            const cleanMessage =
+                'Error in createOrUpdateOrder: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }

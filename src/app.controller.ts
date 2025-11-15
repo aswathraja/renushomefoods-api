@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common'
 import { join } from 'path'
 import { AppService } from './app.service'
+import { logger } from './logger'
 import { Category, Message, PriceList, Product, ProductImage } from './models'
 
 @Controller()
@@ -43,7 +44,16 @@ export class AppController {
             })
             return products
         } catch (error) {
-            console.error('Error in getPriceListsByProduct:', error)
+            const cleanMessage =
+                'Error in getPriceListsByProduct: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             return { error: 'Failed to fetch price lists' }
         }
     }
@@ -55,6 +65,16 @@ export class AppController {
             })
             return categories
         } catch (error) {
+            const cleanMessage =
+                'Error in getCategories: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             return { error: 'Failed to fetch categories' }
         }
     }
@@ -83,6 +103,16 @@ export class AppController {
             }
             return cat
         } catch (error) {
+            const cleanMessage =
+                'Error in createOrUpdateCategory: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             return { error: 'Failed to create or update category' }
         }
     }
@@ -167,6 +197,16 @@ export class AppController {
             })
             return result
         } catch (error) {
+            const cleanMessage =
+                'Error in createOrUpdateProductWithPriceLists: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             return {
                 error: 'Failed to create or update product with pricelists and images',
             }
@@ -195,6 +235,16 @@ export class AppController {
             })
             return msg
         } catch (error) {
+            const cleanMessage =
+                'Error in createMessage: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             return { error: 'Failed to create message.' }
         }
     }

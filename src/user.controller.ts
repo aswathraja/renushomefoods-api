@@ -13,6 +13,7 @@ import * as jwt from 'jsonwebtoken'
 import { Op, Sequelize, UniqueConstraintError } from 'sequelize'
 import { AppService } from './app.service'
 import { sequelize } from './db'
+import { logger } from './logger'
 import { Order, Role, User, UserAddress, UserRole, UserSession } from './models'
 import { decryptPayload, encryptPayload } from './utils'
 
@@ -71,6 +72,15 @@ export class UserController {
                     password: hashedPassword,
                 },
             })
+            // Assign 'Buyer' role (roleId 2) to the user
+            let buyerRole = await Role.findByPk(2)
+            if (!buyerRole) {
+                buyerRole = await Role.create({ id: 2, name: 'Buyer' })
+            }
+            await UserRole.create({
+                userId: user.toJSON().id,
+                roleId: 2,
+            })
             await user.reload() // re-fetch from DB
             await UserAddress.create({
                 userId: user.toJSON().id,
@@ -85,7 +95,7 @@ export class UserController {
             })
 
             // Assign 'Buyer' role (roleId 2) to the user
-            let buyerRole = await Role.findByPk(2)
+            buyerRole = await Role.findByPk(2)
             if (!buyerRole) {
                 buyerRole = await Role.create({ id: 2, name: 'Buyer' })
             }
@@ -99,7 +109,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            console.error('Registration Error:', error)
+            const cleanMessage =
+                'Error in register: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
 
             // Re-throw if it's an HttpException (let Nest handle it)
             if (error instanceof HttpException) {
@@ -228,6 +247,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
+            const cleanMessage =
+                'Error in update: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -334,6 +363,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error) {
+            const cleanMessage =
+                'Error in checkAvailability: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             // Re-throw if it's an HttpException (let Nest handle it)
             if (error instanceof HttpException) {
                 throw error
@@ -347,7 +386,7 @@ export class UserController {
                             'Failed to check availability. ' + error?.message,
                     }),
                 },
-                HttpStatus.FORBIDDEN,
+                HttpStatus.INTERNAL_SERVER_ERROR,
             )
         }
     }
@@ -357,7 +396,7 @@ export class UserController {
         try {
             const decryptedBody = decryptPayload(body.request)
 
-            const { identifier } = decryptedBody
+            const { identifier, regenerate } = decryptedBody
 
             if (!identifier) {
                 throw new HttpException(
@@ -426,12 +465,14 @@ export class UserController {
                     HttpStatus.NOT_FOUND,
                 )
             }
-
-            // Generate 4-digit OTP
-            const otp = this.appService.generateRandomNumber(4)
-
-            // Update OTP in the database
-            await user.update({ otp })
+            let otp = user.toJSON().otp
+            if (regenerate === true || Boolean(user?.toJSON()?.otp) === false) {
+                // Generate 4-digit OTP
+                const newOTP = this.appService.generateRandomNumber(4)
+                otp = newOTP
+                // Update OTP in the database
+                await user.update({ otp: newOTP })
+            }
 
             // Send OTP email
             await this.appService.sendMail({
@@ -450,6 +491,16 @@ export class UserController {
                 }),
             }
         } catch (error) {
+            const cleanMessage =
+                'Error in forgotPassword: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -560,6 +611,16 @@ export class UserController {
                 }),
             }
         } catch (error) {
+            const cleanMessage =
+                'Error in resetPassword: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -673,6 +734,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
+            const cleanMessage =
+                'Error in getDetails: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -757,6 +828,16 @@ export class UserController {
                     },
                 ],
             })
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid username, email or phone number.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
             if (user.toJSON().password === '') {
                 await user.update({
                     otp: this.appService.generateRandomNumber(4),
@@ -818,16 +899,6 @@ export class UserController {
                     }),
                 }
             }
-            if (!user) {
-                throw new HttpException(
-                    {
-                        error: encryptPayload({
-                            error: 'Invalid username, email or phone number.',
-                        }),
-                    },
-                    HttpStatus.FORBIDDEN,
-                )
-            }
             const valid = comparePassword(
                 decryptedBody.password,
                 user.toJSON().password,
@@ -867,6 +938,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error) {
+            const cleanMessage =
+                'Error in login: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1121,7 +1202,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            console.error(error, 'error')
+            const cleanMessage =
+                'Error in getDefaultAddress: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1298,7 +1388,16 @@ export class UserController {
                 return encryptedResponse
             }
         } catch (error: any) {
-            console.error(error, 'error')
+            const cleanMessage =
+                'Error in createOrUpdateAddress: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1402,7 +1501,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            console.error(error, 'error')
+            const cleanMessage =
+                'Error in getAddresses: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1534,7 +1642,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            console.error(error, 'error')
+            const cleanMessage =
+                'Error in changePassword: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1842,7 +1959,16 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            console.error(error, 'error')
+            const cleanMessage =
+                'Error in deleteAddress: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }

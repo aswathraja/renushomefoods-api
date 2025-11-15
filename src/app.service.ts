@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import * as nodemailer from 'nodemailer'
+import { logger } from './logger'
 import { MailOptions } from './models'
 
 @Injectable()
@@ -165,10 +166,19 @@ export class AppService {
                 html,
             })
 
-            console.log('✅ Email sent:')
+            logger.info('✅ Email sent')
             return { success: true, messageId: info.messageId }
         } catch (error) {
-            console.error('❌ Failed to send email:', error)
+            const cleanMessage =
+                'Error in sendMail: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             return { success: false, error }
         }
     }

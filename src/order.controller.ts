@@ -11,6 +11,7 @@ import * as jwt from 'jsonwebtoken'
 import * as sequelize from 'sequelize'
 import { Op } from 'sequelize'
 import { AppService } from './app.service'
+import { logger } from './logger'
 import {
     Cart,
     CartProduct,
@@ -19,8 +20,10 @@ import {
     PriceList,
     Product,
     ProductImage,
+    Role,
     User,
     UserAddress,
+    UserRole,
     UserSession,
 } from './models'
 import { decryptPayload, encryptPayload } from './utils'
@@ -148,7 +151,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in getOrderDetails:', error)
+            const cleanMessage =
+                'Error in getOrderDetails: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -249,7 +261,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in getPendingOrder:', error)
+            const cleanMessage =
+                'Error in getPendingOrder: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -363,7 +384,6 @@ export class OrderController {
                     password: '', // Assuming password is set later or not required
                     otp,
                 })
-
                 user = await User.findOne({
                     where: {
                         name: name || 'User',
@@ -372,6 +392,15 @@ export class OrderController {
                         phone: normalizedPhone,
                         password: '',
                     },
+                })
+                // Assign 'Buyer' role (roleId 2) to the user
+                let buyerRole = await Role.findByPk(2)
+                if (!buyerRole) {
+                    buyerRole = await Role.create({ id: 2, name: 'Buyer' })
+                }
+                await UserRole.create({
+                    userId: user.toJSON().id,
+                    roleId: 2,
                 })
             }
             if (id) {
@@ -454,7 +483,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in saveOrUpdateCart:', error)
+            const cleanMessage =
+                'Error in saveOrUpdateCart: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -634,6 +672,15 @@ export class OrderController {
                         phone: normalizedPhone,
                     },
                 })
+                // Assign 'Buyer' role (roleId 2) to the user
+                let buyerRole = await Role.findByPk(2)
+                if (!buyerRole) {
+                    buyerRole = await Role.create({ id: 2, name: 'Buyer' })
+                }
+                await UserRole.create({
+                    userId: user.toJSON().id,
+                    roleId: 2,
+                })
             }
 
             // Find or create user address
@@ -739,7 +786,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in saveOrUpdateOrder:', error)
+            const cleanMessage =
+                'Error in saveOrUpdateOrder: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -787,6 +843,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
+            const cleanMessage =
+                'Error in getOrderById: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -921,7 +987,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in getUserOrders:', error)
+            const cleanMessage =
+                'Error in getUserOrders: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1047,7 +1122,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in cancelOrder:', error)
+            const cleanMessage =
+                'Error in cancelOrder: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }
@@ -1271,7 +1355,16 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            console.error('Error in reorder:', error)
+            const cleanMessage =
+                'Error in reorder: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
                 throw error
             }

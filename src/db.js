@@ -1,13 +1,23 @@
 const { sequelize } = require('./database');
+const { logger } = require('./logger');
 require('./models');
 
 async function connectToDatabase() {
   try {
     await sequelize.authenticate();
-    console.log('Connection has been established successfully.');
+    logger.info('Connection has been established successfully.');
     await sequelize.sync({ alter: true}); // Sync models with the database
   } catch (error) {
-    console.error('Unable to connect to the database:', error);
+    const cleanMessage =
+        'Unable to connect to the database: ' +
+        (error?.original?.sqlMessage ||
+            error?.parent?.sqlMessage ||
+            error.message ||
+            'Unknown error')
+    const err = new Error(cleanMessage)
+    err.stack = error.stack // keep original stack
+
+    logger.error(err) // Winston now logs message + stack
     process.exit(1);
   }
 }
