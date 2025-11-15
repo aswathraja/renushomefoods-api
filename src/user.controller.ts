@@ -921,6 +921,7 @@ export class UserController {
             await UserSession.create({
                 userId: user.toJSON().id,
                 token,
+                prevToken: token,
                 // expiry will auto-default to 1 day later via the model definition
             })
             const encryptedResponse = {
@@ -975,7 +976,10 @@ export class UserController {
             // 3. Check if token exists in DB and is not expired
             const session = await UserSession.findOne({
                 where: {
-                    token: decryptedToken,
+                    [Op.or]: [
+                        { token: decryptedToken },
+                        { prevToken: decryptedToken },
+                    ],
                     isExpired: false,
                 },
             })
@@ -1015,7 +1019,7 @@ export class UserController {
                     },
                 ],
             })
-            if (session.expiry <= oneHourFromNow) {
+            if (session.toJSON().expiry <= oneHourFromNow) {
                 // Renew token: generate new JWT and update session expiry
                 if (!user) {
                     throw new HttpException(
@@ -1035,6 +1039,12 @@ export class UserController {
                 // Update session with new token and expiry
                 await session.update({
                     token: newToken,
+                    prevToken: session.toJSON().token,
+                    expiry: new Date(now.getTime() + 24 * 60 * 60 * 1000), // 1 day from now
+                })
+            } else if (session.toJSON().token != session.toJSON().prevToken) {
+                await session.update({
+                    prevToken: session.toJSON().token,
                     expiry: new Date(now.getTime() + 24 * 60 * 60 * 1000), // 1 day from now
                 })
             }

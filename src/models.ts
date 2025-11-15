@@ -95,6 +95,11 @@ UserSession.init(
             allowNull: false,
             unique: true,
         },
+        prevToken: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            unique: true,
+        },
         expiry: {
             type: DataTypes.DATE,
             allowNull: false,
