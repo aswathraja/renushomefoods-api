@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Invoice</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #fdf7ee; /* Light beige background */
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      justify-content: center !important;
+    }
+
+    .container {
+      width: 100%;
+      padding: 10px 0;
+      display: flex;
+      justify-content: center !important;
+      background-color: #fdf7ee;
+    }
+
+    .email-wrapper {
+      background-color: #fdf7ee;
+      max-width: 100%;
+      width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+
+    .header {
+      text-align: center;
+      padding: 40px 20px 20px;
+      background-color: #fdf7ee;
+    }
+
+    .header img {
+      max-width: 180px;
+      height: auto;
+    }
+
+    /* Message container */
+    .message-box {
+      background-color: #ffffff; /* White inner box */
+      border: 2px solid #8b5e3c; /* Elegant brown border */
+      border-radius: 10px;
+      padding: 30px 40px;
+      margin: 0 auto 30px;
+      font-size: 17px;
+      color: #333333;
+      line-height: 1.8;
+      text-align: left;
+      max-width: 90%;
+    }
+
+    .message-box strong {
+      color: #8b5e3c; /* Highlight brand color */
+    }
+
+    /* Details row */
+    .details-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 0 auto 30px;
+      max-width: 95%;
+    }
+
+    /* Seller details section */
+    .seller-details {
+      background-color: #ffffff;
+      border: 2px solid #8b5e3c;
+      border-radius: 10px;
+      padding: 20px;
+      width: 48%;
+      margin-right: 20px;
+      font-size: 15px;
+      color: #333333;
+      line-height: 1.6;
+    }
+
+    .seller-details h3 {
+      margin-top: 0;
+      color: #8b5e3c;
+    }
+
+    /* Order details section */
+    .order-details {
+      background-color: #ffffff;
+      border: 2px solid #8b5e3c;
+      border-radius: 10px;
+      padding: 15px;
+      width: 48%;
+      font-size: 15px;
+      color: #333333;
+      line-height: 1.6;
+      text-align: right;
+      height:fit-content;
+    }
+
+    .order-details p {
+      margin: 5px 0;
+    }
+
+    /* Addresses section */
+    .addresses {
+      display: flex;
+      justify-content: space-between;
+      margin: 0 auto 30px;
+      max-width: 95%;
+    }
+
+    .address-box {
+      background-color: #ffffff;
+      border: 2px solid #8b5e3c;
+      border-radius: 10px;
+      padding: 20px;
+      width: 48%;
+      margin-right: 20px;
+      font-size: 15px;
+      color: #333333;
+      line-height: 1.6;
+    }
+
+    .address-box.shipping {
+      text-align: right;
+      margin-right: 0;
+    }
+
+    .address-box h3 {
+      margin-top: 0;
+      color: #8b5e3c;
+    }
+
+    /* Items table */
+    .items-table {
+      margin: 0 auto 30px;
+      max-width: 95%;
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .items-table th, .items-table td {
+      border: 1px solid #8b5e3c;
+      padding: 10px;
+      text-align: left;
+    }
+
+    .items-table th {
+      background-color: #8b5e3c;
+      color: #ffffff;
+    }
+
+    /* Totals section */
+    .totals {
+      background-color: #ffffff;
+      border: 2px solid #8b5e3c;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 0 auto 30px;
+      max-width: 93%;
+      text-align: right;
+      font-size: 16px;
+    }
+
+    .totals p {
+      margin: 5px 0;
+    }
+
+    .totals .total {
+      font-weight: bold;
+      font-size: 18px;
+      color: #8b5e3c;
+    }
+
+    .footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 13px;
+      color: #888888;
+      border-top: 1px solid #e0e0e0;
+      background-color: #fdf7ee;
+    }
+
+    @media only screen and (max-width: 600px) {
+      .email-wrapper {
+        width: 95%;
+      }
+
+      .header img {
+        max-width: 130px;
+      }
+
+      .message-box, .address-box, .totals {
+        padding: 20px 25px;
+        font-size: 15px;
+        margin: 0 10px 25px;
+      }
+
+      .addresses {
+        flex-direction: column;
+        margin: 0 10px 25px;
+      }
+
+      .address-box {
+        width: 100%;
+        margin-bottom: 15px;
+      }
+
+      .address-box.shipping {
+        text-align: left;
+      }
+
+      .items-table {
+        font-size: 14px;
+        margin: 0 10px 25px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="email-wrapper">
+      <div class="header">
+        <img src="{{logo}}" alt="Logo" />
+      </div>
+      <div class="message-box">
+        <strong>Greating from Renu's Home Foods</strong><br/> <br/>
+        {{{message}}}
+      </div>
+      <div style="text-align: center;"><strong>Invoice</strong></div><br/> <br/>
+      <div class="details-row">
+        <div class="seller-details">
+          <h3>Seller Details</h3>
+          Renu's Home Foods<br/>
+          D2, Vaigundar Villa<br/>
+          Sumangali Manasarovar Garden<br/>
+          Paruthipattu, Chennai - 600071<br/>
+          <strong>Ph.No: {{phone}}</strong><br/>
+          <strong>Email: {{email}}</strong><br/>
+          <strong>PAN: {{pan}}</strong><br/>
+          <strong>GST Registration No: {{gst}}</strong><br/>
+          <strong>CIN No: {{cin}}</strong>
+        </div>
+        <div class="order-details">
+          <p><strong>Order ID: {{orderId}}</strong></p>
+          <p><strong>Order Date: {{orderDate}}</strong></p>
+          <p><strong>Payment Method: {{paymentMethod}}</strong></p>
+          <p><strong>Shipping Method: {{shippingMethod}}</strong></p>
+          <p><strong>Order Notes: {{{orderNotes}}}</strong></p>
+        </div>
+      </div>
+      <div class="addresses">
+        <div class="address-box">
+          <h3>Billing Address</h3>
+          {{{billingAddress}}}
+          <p style="margin: 2px 0;"><strong>Email:</strong> {{billingEmail}}</p>
+          <p style="margin: 2px 0;"><strong>Phone:</strong> {{billingPhone}}</p>
+        </div>
+        <div class="address-box shipping">
+          <h3>Shipping Address</h3>
+          {{{shippingAddress}}}
+          <p style="margin: 2px 0;"><strong>Email:</strong> {{shippingEmail}}</p>
+          <p style="margin: 2px 0;"><strong>Phone:</strong> {{shippingPhone}}</p>
+        </div>
+      </div>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Quantity</th>
+            <th>Price</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each items}}
+          <tr>
+            <td>{{name}}</td>
+            <td>{{quantity}}</td>
+            <td>₹{{price}}</td>
+            <td>₹{{total}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+      <div class="totals">
+        <p><strong>Subtotal: ₹{{subtotal}}</strong></p>
+        {{#if shipping}}<p>Shipping: {{{shipping}}}</p>{{/if}}
+        <p class="total">Total: ₹{{total}}</p>
+      </div>
+      <div class="footer">
+        <p>© {{year}} Renu’s Home Foods. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

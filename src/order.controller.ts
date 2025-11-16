@@ -781,6 +781,33 @@ export class OrderController {
                 })
                 await order.reload() // Ensure the instance is reloaded with the generated id
             }
+            const orderInvoiceData = await this.appService.getOrderInvoiceData(
+                order.toJSON().id,
+                'Thank you for placing your order. Please find the invoice below.',
+            )
+            if (
+                (order.paymentMethod === 'UPI' &&
+                    status === 'Payment Processed') ||
+                (order.paymentMethod !== 'UPI' &&
+                    order.toJSON().status === 'Ordered')
+            ) {
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: user.toJSON().email,
+                    subject: "Your Order Invoice - Renu's Home Foods",
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: process.env.SMTP_USER,
+                    subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+            }
+
             const encryptedResponse = {
                 response: encryptPayload(order),
             }

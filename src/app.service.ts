@@ -1,7 +1,23 @@
 import { Injectable } from '@nestjs/common'
+import { readFileSync } from 'fs'
+import Handlebars from 'handlebars'
 import * as nodemailer from 'nodemailer'
+import { join } from 'path'
 import { logger } from './logger'
-import { MailOptions } from './models'
+import {
+    Cart,
+    CartProduct,
+    Order,
+    PriceList,
+    Product,
+    User,
+    UserAddress,
+} from './models'
+
+// Register Handlebars helpers
+Handlebars.registerHelper('eq', function (a, b) {
+    return a === b
+})
 
 @Injectable()
 export class AppService {
@@ -29,15 +45,207 @@ export class AppService {
     }
 
     /**
+     * Sanitizes a string to a number, removing Rupee symbol and spaces.
+     * Returns 0 if null, undefined, or NaN.
+     * @param value The string to sanitize.
+     * @returns The parsed number or 0.
+     */
+    public sanitizeStringToNumber(value: string | null | undefined): number {
+        if (value == null) return 0
+        const cleaned = value.replace(/₹|\s/g, '')
+        const num = parseFloat(cleaned)
+        return isNaN(num) ? 0 : num
+    }
+
+    /**
+     * Fetches order details for invoice template.
+     * @param orderId The order ID.
+     * @param message Additional message for the invoice.
+     * @returns Object with formatted data for the template.
+     */
+    public async getOrderInvoiceData(orderId: string, message: string) {
+        try {
+            // Fetch order with associated models
+            const order = await Order.findByPk(orderId, {
+                include: [
+                    {
+                        model: UserAddress,
+                        as: 'UserAddress',
+                        include: [
+                            {
+                                model: User,
+                                as: 'User',
+                            },
+                        ],
+                    },
+                    {
+                        model: Cart,
+                        as: 'Cart',
+                        include: [
+                            {
+                                model: CartProduct,
+                                as: 'CartProducts',
+                                include: [
+                                    {
+                                        model: Product,
+                                        as: 'Product',
+                                    },
+                                    {
+                                        model: PriceList,
+                                        as: 'PriceList',
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            })
+
+            if (!order) {
+                throw new Error('Order not found')
+            }
+
+            // Format billing address
+            const billingAddress = `${order.toJSON().UserAddress.name}<br/>${order.toJSON().UserAddress.addressLine1}<br/>${order.toJSON().UserAddress.city}, ${order.toJSON().UserAddress.state}<br/>${order.toJSON().UserAddress.country} - ${order.toJSON().UserAddress.pincode}`
+
+            // Extract user contact details
+            const userEmail = order.toJSON().UserAddress.User.email
+            const userPhone = order.toJSON().UserAddress.User.phone
+
+            // Determine shipping address
+            let shippingAddress: string
+            if (order.toJSON().shippingMethod === 'Home Delivery') {
+                shippingAddress = billingAddress // Same as billing
+            } else if (order.toJSON().shippingMethod === 'Free Store Pickup') {
+                shippingAddress =
+                    'D2, Vaigundar Villa<br/>Sumangali Manasarovar Garden<br/>Paruthipattu<br/>Chennai - 600071'
+            } else {
+                shippingAddress = 'Unknown'
+            }
+
+            // Calculate items with totals
+            const items = order
+                .toJSON()
+                .Cart.CartProducts.map((cartProduct) => ({
+                    name: cartProduct.Product.name,
+                    quantity: cartProduct.quantity,
+                    price: cartProduct.PriceList.unitprice.toFixed(2),
+                    total: (
+                        cartProduct.quantity * cartProduct.PriceList.unitprice
+                    ).toFixed(2),
+                }))
+
+            // Calculate subtotal
+            const subtotal = order
+                .toJSON()
+                .Cart.CartProducts.reduce(
+                    (sum, cartProduct) =>
+                        sum +
+                        cartProduct.quantity * cartProduct.PriceList.unitprice,
+                    0,
+                )
+
+            // Determine shipping
+            let shipping: string | boolean
+            if (
+                subtotal < 999 &&
+                order.toJSON().shippingMethod === 'Home Delivery'
+            ) {
+                shipping = '₹99.00'
+            } else {
+                shipping = '<strong>Free</strong>'
+            }
+
+            // Calculate total
+            const total = subtotal + this.sanitizeStringToNumber(shipping)
+
+            return {
+                logo: 'https://renushomefoods.com/static/logo.png',
+                message,
+                billingAddress,
+                billingEmail: userEmail,
+                billingPhone: userPhone,
+                shippingAddress,
+                shippingEmail:
+                    order.toJSON().shippingMethod === 'Home Delivery'
+                        ? userEmail
+                        : 'renushomefoods@gmail.com',
+                shippingPhone:
+                    order.toJSON().shippingMethod === 'Home Delivery'
+                        ? userPhone
+                        : '+91 93637-20792',
+                items,
+                subtotal: subtotal.toFixed(2),
+                shipping,
+                total: total.toFixed(2),
+                year: new Date().getFullYear().toString(),
+                orderId: order.toJSON().id,
+                orderDate: this.formatDate(
+                    new Date(order.toJSON().orderedDate),
+                    true,
+                ),
+                pan: '',
+                gst: '',
+                cin: '',
+                phone: '+91 93637-20792',
+                email: 'renushomefoods@gmail.com',
+                paymentMethod: order.toJSON().paymentMethod || '',
+                shippingMethod: order.toJSON().shippingMethod || '',
+                orderNotes:
+                    order.toJSON().notes?.replace(/\n/gim, '<br/>') || '',
+            }
+        } catch (error) {
+            logger.error('Error fetching order invoice data:', error)
+            throw error
+        }
+    }
+
+    /**
+     * Formats a date to "DD/MM/yyyy hh:mm:ss AM/PM" format.
+     * @param date The date to format.
+     * @returns Formatted date string.
+     */
+    public formatDate(date: Date, includeTimestamp: boolean = true): string {
+        const day = String(date.getDate()).padStart(2, '0')
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const year = date.getFullYear()
+        const hours = date.getHours()
+        const minutes = String(date.getMinutes()).padStart(2, '0')
+        const seconds = String(date.getSeconds()).padStart(2, '0')
+        const ampm = hours >= 12 ? 'PM' : 'AM'
+        const formattedHours = hours % 12 || 12
+        return includeTimestamp === true
+            ? `${day}/${month}/${year} ${formattedHours}:${minutes}:${seconds} ${ampm}`
+            : `${day}/${month}/${year}`
+    }
+
+    /**
+     * Renders HTML template with data using Handlebars.
+     * @param template The template name.
+     * @param data The data to render in the template.
+     * @returns Rendered HTML string.
+     */
+    private renderTemplate(template: string, data: any): string {
+        const templatePath = join(__dirname, 'templates', `${template}.html`)
+        const templateSource = readFileSync(templatePath, 'utf8')
+        const compiledTemplate = Handlebars.compile(templateSource)
+        return compiledTemplate(data)
+    }
+
+    /**
      * Sends an HTML email using Nodemailer with a responsive template.
      */
     public async sendMail({
         to,
         subject,
-        message,
-        userFullName,
-        logoUrl,
-    }: MailOptions) {
+        template,
+        data,
+    }: {
+        to: string
+        subject: string
+        template: string
+        data: any
+    }) {
         try {
             const transporter = nodemailer.createTransport({
                 host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -49,115 +257,7 @@ export class AppService {
                 },
             })
 
-            const logo = logoUrl || 'https://renushomefoods.com/static/logo.png'
-
-            const html = `
-        <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${subject}</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #fdf7ee; /* Light beige background */
-      font-family: 'Helvetica Neue', Arial, sans-serif;
-      justify-content: center !important;
-    }
-
-    .container {
-      width: 100%;
-      padding: 10px 0;
-      display: flex;
-      justify-content: center !important;
-      background-color: #fdf7ee;
-    }
-
-    .email-wrapper {
-      background-color: #fdf7ee;
-      max-width: 100%;
-      width: 100%;
-      border-radius: 12px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-      overflow: hidden;
-    }
-
-    .header {
-      text-align: center;
-      padding: 40px 20px 20px;
-      background-color: #fdf7ee;
-    }
-
-    .header img {
-      max-width: 180px;
-      height: auto;
-    }
-
-    /* Message container */
-    .message-box {
-      background-color: #ffffff; /* White inner box */
-      border: 2px solid #8b5e3c; /* Elegant brown border */
-      border-radius: 10px;
-      padding: 30px 40px;
-      margin: 0 auto 30px;
-      font-size: 17px;
-      color: #333333;
-      line-height: 1.8;
-      text-align: left;
-      max-width: 90%;
-    }
-
-    .message-box strong {
-      color: #8b5e3c; /* Highlight brand color */
-    }
-
-    .footer {
-      text-align: center;
-      padding: 20px;
-      font-size: 13px;
-      color: #888888;
-      border-top: 1px solid #e0e0e0;
-      background-color: #fdf7ee;
-    }
-
-    @media only screen and (max-width: 600px) {
-      .email-wrapper {
-        width: 95%;
-      }
-
-      .header img {
-        max-width: 130px;
-      }
-
-      .message-box {
-        padding: 20px 25px;
-        font-size: 15px;
-        margin: 0 10px 25px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="email-wrapper">
-      <div class="header">
-        <img src="${logo}" alt="Logo" />
-      </div>
-      <div class="message-box">
-        <strong>Greetings From Renu's Home Foods</strong><br/> <br/>
-        Dear ${userFullName},<br/><br/>
-        ${message}
-      </div>
-      <div class="footer">
-        <p>© ${new Date().getFullYear()} Renu’s Home Foods. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-      `
+            const html = this.renderTemplate(template, data)
 
             const info = await transporter.sendMail({
                 from: `"Renu's Home Foods" <${process.env.SMTP_USER}>`,

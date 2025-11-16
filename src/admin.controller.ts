@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common'
 import * as jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
+import { AppService } from './app.service'
 import { sequelize } from './db'
 import { logger } from './logger'
 import {
@@ -29,7 +30,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
 @Controller('admin')
 export class AdminController {
-    constructor() {}
+    constructor(private appService: AppService) {}
 
     // Common function to authenticate if the user has admin role (roleId 1)
     async authenticateAdmin(authHeader: string): Promise<any> {
@@ -775,6 +776,7 @@ export class AdminController {
                     status: 'Ordered',
                 })
             }
+            let isProductsModified = false
             // Handle products: remove not in request, update/create those in request
             const existingCartProducts = await CartProduct.findAll({
                 where: { cartId: cart.toJSON().id },
@@ -822,7 +824,10 @@ export class AdminController {
                         cp.priceListId === prod.priceListId,
                 )
                 if (existing) {
-                    await existing.update({ quantity: prod.quantity })
+                    if (prod.quantity !== existing.toJSON().quantity) {
+                        await existing.update({ quantity: prod.quantity })
+                        isProductsModified = true
+                    }
                 } else {
                     await CartProduct.create({
                         cartId: cart.id,
@@ -830,6 +835,7 @@ export class AdminController {
                         priceListId: prod.priceListId,
                         quantity: prod.quantity,
                     })
+                    isProductsModified = true
                 }
             }
             // Delete CartProducts not in request
@@ -840,11 +846,15 @@ export class AdminController {
                     ) === -1
                 ) {
                     await existing.destroy()
+                    isProductsModified = true
                 }
             }
 
             // Step 4: Create or update Order
             let order
+            let isNewOrder = false
+            let isOrderShipped = false
+            let isOrderDelivered = false
             if (orderId) {
                 order = await Order.findByPk(orderId)
                 if (!order) {
@@ -857,6 +867,12 @@ export class AdminController {
                         HttpStatus.BAD_REQUEST,
                     )
                 }
+                isOrderShipped =
+                    order.toJSON().status !== orderStatus &&
+                    orderStatus === 'Shipped'
+                isOrderDelivered =
+                    order.toJSON().status !== orderStatus &&
+                    orderStatus === 'Delivered'
                 await order.update({
                     userId: user.id,
                     userAddressId: address.toJSON().id,
@@ -869,6 +885,7 @@ export class AdminController {
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                 })
+                isNewOrder = false
             } else {
                 order = await Order.create({
                     userId: user.toJSON().id,
@@ -881,6 +898,74 @@ export class AdminController {
                     status: orderStatus,
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
+                })
+                isNewOrder = true
+            }
+            if (isProductsModified === true || isNewOrder === true) {
+                const orderInvoiceData =
+                    await this.appService.getOrderInvoiceData(
+                        order.toJSON().id,
+                        isNewOrder === true
+                            ? 'Thank you for placing your order. Please find the invoice below'
+                            : isProductsModified === true
+                              ? 'We have updated your order. Please find the updated invoice below'
+                              : '',
+                    )
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: user.toJSON().email,
+                    subject: isNewOrder
+                        ? "Your Order Invoice - Renu's Home Foods"
+                        : isProductsModified
+                          ? "Your Updated Order Invoice - Renu's Home Foods"
+                          : '',
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: process.env.SMTP_USER,
+                    subject: isNewOrder
+                        ? `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`
+                        : isProductsModified
+                          ? `Order Updated - ${user.toJSON().name} (${user.toJSON().phone})`
+                          : '',
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+            }
+            if (isOrderShipped) {
+                const orderInvoiceData =
+                    await this.appService.getOrderInvoiceData(
+                        order.toJSON().id,
+                        'We have shipped order, you should recieve your order as per our shipping policy with estimated delivery by <strong>' +
+                            this.appService.formatDate(
+                                new Date(order.toJSON().expectedDeliveryDate),
+                                false,
+                            ) +
+                            '</strong>. Please find the invoice below',
+                    )
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: user.toJSON().email,
+                    subject: "Order Shipped - Renu's Home Foods",
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+            }
+            if (isOrderDelivered) {
+                const orderInvoiceData =
+                    await this.appService.getOrderInvoiceData(
+                        order.toJSON().id,
+                        'Your Order has been delivered. Hope you enjoy our delicacies as much as we loved making it for you. Please find the invoice below',
+                    )
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: user.toJSON().email,
+                    subject: "Order Delivered - Renu's Home Foods",
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
                 })
             }
             const encryptedResponse = {

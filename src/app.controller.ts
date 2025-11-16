@@ -233,6 +233,17 @@ export class AppController {
                 email: body.email,
                 message: body.message,
             })
+            await this.appService.sendMail({
+                to: process.env.SMTP_USER,
+                subject: `Renu's Home Foods - Message from ${body.name}`,
+                template: 'simple-message',
+                data: {
+                    logo: 'https://renushomefoods.com/static/logo.png',
+                    userFullName: 'Renuga',
+                    message: `Message from ${body.name} (${body?.phone} - ${body.email}). <br/><br/> ${body.message.replace(/\n/gim, '<br/>')}`,
+                    year: new Date().getFullYear().toString(),
+                },
+            })
             return msg
         } catch (error) {
             const cleanMessage =

@@ -478,8 +478,13 @@ export class UserController {
             await this.appService.sendMail({
                 to: user.toJSON().email,
                 subject: "Renu's Home Foods - Password Reset OTP Verification",
-                message: `Your OTP to reset your password for your account with with ${user.toJSON().email} and phone number ${user.toJSON().phone} is ${otp}. This OTP is valid for 10 minutes.`,
-                userFullName: user.toJSON().name,
+                template: 'simple-message',
+                data: {
+                    logo: 'https://renushomefoods.com/static/logo.png',
+                    userFullName: user.toJSON().name,
+                    message: `Your OTP to reset your password for your account with with ${user.toJSON().email} and phone number ${user.toJSON().phone} is ${otp}. This OTP is valid for 10 minutes.`,
+                    year: new Date().getFullYear().toString(),
+                },
             })
 
             // Mask the email for partial visibility
@@ -887,8 +892,13 @@ export class UserController {
                     to: updatedUser.toJSON().email,
                     subject:
                         "Renu's Home Foods - Password Reset OTP Verification",
-                    message: `Your OTP to reset your password for your account with with ${updatedUser.toJSON().email} and phone number ${updatedUser.toJSON().phone} is ${updatedUser.toJSON().otp}. This OTP is valid for 10 minutes.`,
-                    userFullName: updatedUser.toJSON().name,
+                    template: 'simple-message',
+                    data: {
+                        logo: 'https://renushomefoods.com/static/logo.png',
+                        userFullName: updatedUser.toJSON().name,
+                        message: `Your OTP to reset your password for your account with with ${updatedUser.toJSON().email} and phone number ${updatedUser.toJSON().phone} is ${updatedUser.toJSON().otp}. This OTP is valid for 10 minutes.`,
+                        year: new Date().getFullYear().toString(),
+                    },
                 })
                 const maskedEmail = this.appService.maskEmail(
                     updatedUser.toJSON().email,
