@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv'
 import morgan from 'morgan'
 import { join } from 'path'
 import * as winston from 'winston'
+import DailyRotateFile from 'winston-daily-rotate-file'
 dotenv.config()
 export const logger = winston.createLogger({
     level: 'info',
@@ -25,18 +26,24 @@ export const logger = winston.createLogger({
     ),
     defaultMeta: { service: 'renushomefoods-api' },
     transports: [
-        new winston.transports.File({
+        new DailyRotateFile({
             filename: join(
                 process.env.LOG_PATH || '',
-                'renushomefoods-api-error.log',
+                'renushomefoods-api-error-%DATE%.log',
             ),
             level: 'error',
+            datePattern: 'YYYY-MM-DD',
+            maxSize: '20m',
+            maxFiles: '14d',
         }),
-        new winston.transports.File({
+        new DailyRotateFile({
             filename: join(
                 process.env.LOG_PATH || '',
-                'renushomefoods-api.log',
+                'renushomefoods-api-%DATE%.log',
             ),
+            datePattern: 'YYYY-MM-DD',
+            maxSize: '20m',
+            maxFiles: '14d',
         }),
     ],
 })

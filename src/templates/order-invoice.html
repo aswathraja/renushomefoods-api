@@ -32,7 +32,7 @@
 
     .header {
       text-align: center;
-      padding: 40px 20px 20px;
+      padding: 20px 15px 15px;
       background-color: #fdf7ee;
     }
 
@@ -47,7 +47,7 @@
       border: 2px solid #8b5e3c; /* Elegant brown border */
       border-radius: 10px;
       padding: 30px 40px;
-      margin: 0 auto 30px;
+      margin: 0 auto 20px;
       font-size: 17px;
       color: #333333;
       line-height: 1.8;
@@ -63,7 +63,7 @@
     .details-row {
       display: flex;
       justify-content: space-between;
-      margin: 0 auto 30px;
+      margin: 0 auto 20px;
       max-width: 95%;
     }
 
@@ -100,14 +100,14 @@
     }
 
     .order-details p {
-      margin: 5px 0;
+      margin: 5px 0 !important;
     }
 
     /* Addresses section */
     .addresses {
       display: flex;
       justify-content: space-between;
-      margin: 0 auto 30px;
+      margin: 0 auto 20px;
       max-width: 95%;
     }
 
@@ -135,7 +135,7 @@
 
     /* Items table */
     .items-table {
-      margin: 0 auto 30px;
+      margin: 0 auto 20px;
       max-width: 95%;
       border-collapse: collapse;
       width: 100%;
@@ -158,8 +158,8 @@
       border: 2px solid #8b5e3c;
       border-radius: 10px;
       padding: 20px;
-      margin: 0 auto 30px;
-      max-width: 93%;
+      margin: 0 auto 20px;
+      max-width: 92%;
       text-align: right;
       font-size: 16px;
     }
@@ -217,6 +217,34 @@
         margin: 0 10px 25px;
       }
     }
+
+    @media print {
+      body {
+        font-size: 10px !important;
+      }
+
+      .message-box {
+        display: none;
+      }
+
+      .totals .total {
+        font-size: 12px !important;
+      }
+
+      .invoice-header {
+        font-size:16px !important;
+      }
+      .message-box, .address-box, .totals, .seller-details, .order-details {
+        font-size: 11px !important;
+      }
+      .footer {
+        font-size:10px !important;
+      }
+
+      .order-details p {
+      margin: 5px 0 !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -229,7 +257,7 @@
         <strong>Greating from Renu's Home Foods</strong><br/> <br/>
         {{{message}}}
       </div>
-      <div style="text-align: center;"><strong>Invoice</strong></div><br/> <br/>
+      <div style="text-align: center;" class="invoice-header"><strong>Invoice</strong></div><br/> <br/>
       <div class="details-row">
         <div class="seller-details">
           <h3>Seller Details</h3>
@@ -248,7 +276,8 @@
           <p><strong>Order Date: {{orderDate}}</strong></p>
           <p><strong>Payment Method: {{paymentMethod}}</strong></p>
           <p><strong>Shipping Method: {{shippingMethod}}</strong></p>
-          <p><strong>Order Notes: {{{orderNotes}}}</strong></p>
+          <p><strong>Order Notes</strong></p>
+          <p>{{{orderNotes}}}</p>
         </div>
       </div>
       <div class="addresses">
@@ -287,6 +316,7 @@
       </table>
       <div class="totals">
         <p><strong>Subtotal: ₹{{subtotal}}</strong></p>
+        {{#if totalDiscount}}<p>Discount: -₹{{totalDiscount}}</p>{{/if}}
         {{#if shipping}}<p>Shipping: {{{shipping}}}</p>{{/if}}
         <p class="total">Total: ₹{{total}}</p>
       </div>

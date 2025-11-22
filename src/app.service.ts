@@ -3,11 +3,16 @@ import { readFileSync } from 'fs'
 import Handlebars from 'handlebars'
 import * as nodemailer from 'nodemailer'
 import { join } from 'path'
+import puppeteer from 'puppeteer'
 import { logger } from './logger'
 import {
     Cart,
     CartProduct,
+    CouponCode,
+    CouponDiscounts,
+    CouponProducts,
     Order,
+    OrderCoupon,
     PriceList,
     Product,
     User,
@@ -93,6 +98,33 @@ export class AppService {
                                     {
                                         model: PriceList,
                                         as: 'PriceList',
+                                        attributes: { exclude: ['bomCost'] },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        model: OrderCoupon,
+                        as: 'OrderCoupons',
+                        include: [
+                            {
+                                model: CouponCode,
+                                as: 'CouponCode',
+                                include: [
+                                    {
+                                        model: CouponDiscounts,
+                                        as: 'CouponDiscounts',
+                                    },
+                                    {
+                                        model: CouponProducts,
+                                        as: 'CouponProducts',
+                                        include: [
+                                            {
+                                                model: Product,
+                                                as: 'Product',
+                                            },
+                                        ],
                                     },
                                 ],
                             },
@@ -145,19 +177,140 @@ export class AppService {
                     0,
                 )
 
-            // Determine shipping
+            // Calculate coupon discount
+            let totalDiscount = 0
+            let shippingDiscount = 0
+            const orderCoupons = order.toJSON().OrderCoupons
+            if (
+                orderCoupons &&
+                orderCoupons.length > 0 &&
+                orderCoupons[0]?.CouponCode?.CouponDiscounts?.length > 0
+            ) {
+                const orderCoupon = orderCoupons[0] // Assuming one coupon per order
+                const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts
+                const couponProducts = orderCoupon.CouponCode.CouponProducts
+
+                // Get applicable products
+                const applicableProductIds = couponProducts.map(
+                    (cp) => cp.productId,
+                )
+
+                couponDiscounts.forEach((discount) => {
+                    let discountAmount = 0
+                    if (applicableProductIds.length === 0) {
+                        // Applies to all products
+                        if (discount.flatrate) {
+                            discountAmount = discount.discount
+                        } else {
+                            discountAmount =
+                                subtotal * (discount.discount / 100)
+                        }
+                    } else {
+                        // Applies to specific products
+                        const applicableSubtotal = order
+                            .toJSON()
+                            .Cart.CartProducts.filter((cp) =>
+                                applicableProductIds.includes(cp.productId),
+                            )
+                            .reduce(
+                                (sum, cartProduct) =>
+                                    sum +
+                                    cartProduct.quantity *
+                                        cartProduct.PriceList.unitprice,
+                                0,
+                            )
+                        if (discount.flatrate) {
+                            discountAmount = order
+                                .toJSON()
+                                .Cart.CartProducts.filter((cp) =>
+                                    applicableProductIds.includes(cp.productId),
+                                )
+                                .reduce(
+                                    (sum, cp) =>
+                                        sum +
+                                        (cp.PriceList.unitprice -
+                                            discount.discount) *
+                                            cp.quantity,
+                                    0,
+                                )
+                            if (
+                                discount.name === 'Shipping' &&
+                                discount.flatrate
+                            ) {
+                                shippingDiscount = 99 - discount.discount
+                            } else if (
+                                discount.name === 'Shipping' &&
+                                discount.flatrate === false
+                            ) {
+                                shippingDiscount =
+                                    99 - 99 * (discount.discount / 100)
+                            }
+                        } else {
+                            discountAmount =
+                                applicableSubtotal * (discount.discount / 100)
+                        }
+
+                        if (discount.name === 'Shipping' && discount.flatrate) {
+                            shippingDiscount = 99 - discount.discount
+                        } else if (
+                            discount.name === 'Shipping' &&
+                            discount.flatrate === false
+                        ) {
+                            shippingDiscount = 99 * (discount.discount / 100)
+                        }
+                    }
+                    if (discount.name !== 'Shipping') {
+                        totalDiscount += discountAmount
+                    }
+                })
+            }
+
+            // Adjust subtotal after discount
+            const adjustedSubtotal = subtotal - totalDiscount
+
+            // Determine shipping based on adjusted subtotal
             let shipping: string | boolean
             if (
                 subtotal < 999 &&
                 order.toJSON().shippingMethod === 'Home Delivery'
             ) {
-                shipping = '₹99.00'
+                // Check for shipping discount
+                let shippingDiscount = 0
+                let isShippingFlatrate = false
+                if (
+                    orderCoupons &&
+                    orderCoupons.length > 0 &&
+                    orderCoupons[0]?.CouponCode?.CouponDiscounts?.length > 0
+                ) {
+                    const couponDiscounts =
+                        orderCoupons[0].CouponCode.CouponDiscounts
+                    const shippingDiscountObj = couponDiscounts.find(
+                        (d) => d.name === 'Shipping',
+                    )
+                    if (shippingDiscountObj) {
+                        if (shippingDiscountObj.flatrate) {
+                            shippingDiscount = shippingDiscountObj.discount
+                            isShippingFlatrate = true
+                        } else {
+                            shippingDiscount =
+                                99 * (shippingDiscountObj.discount / 100)
+                        }
+                    }
+                }
+                const shippingCost = isShippingFlatrate
+                    ? shippingDiscount
+                    : 99 - shippingDiscount
+                shipping =
+                    shippingCost > 0
+                        ? `₹${shippingCost.toFixed(2)}`
+                        : '<strong>Free</strong>'
             } else {
                 shipping = '<strong>Free</strong>'
             }
 
             // Calculate total
-            const total = subtotal + this.sanitizeStringToNumber(shipping)
+            const total =
+                adjustedSubtotal + this.sanitizeStringToNumber(shipping)
 
             return {
                 logo: 'https://renushomefoods.com/static/logo.png',
@@ -191,6 +344,8 @@ export class AppService {
                 email: 'renushomefoods@gmail.com',
                 paymentMethod: order.toJSON().paymentMethod || '',
                 shippingMethod: order.toJSON().shippingMethod || '',
+                totalDiscount:
+                    totalDiscount > 0 ? totalDiscount.toFixed(2) : undefined,
                 orderNotes:
                     order.toJSON().notes?.replace(/\n/gim, '<br/>') || '',
             }
@@ -230,6 +385,77 @@ export class AppService {
         const templateSource = readFileSync(templatePath, 'utf8')
         const compiledTemplate = Handlebars.compile(templateSource)
         return compiledTemplate(data)
+    }
+
+    /**
+     * Generates a PDF invoice for the given order ID using the same template as the email.
+     * @param orderId The order ID.
+     * @returns A Buffer containing the PDF data.
+     */
+    public async generateOrderInvoicePDF(orderId: string): Promise<Buffer> {
+        try {
+            // Fetch order invoice data with a default message
+            const invoiceData = await this.getOrderInvoiceData(
+                orderId,
+                'Thank you for your order. Please find the invoice below.',
+            )
+
+            // Render the HTML template
+            const html = this.renderTemplate('order-invoice', invoiceData)
+
+            // Launch Puppeteer browser
+            const browser = await puppeteer.launch({
+                headless: true,
+                executablePath: process.env.CHROME_PATH,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-software-rasterizer',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                ],
+            })
+
+            const page = await browser.newPage()
+
+            // Set the HTML content
+            await page.setContent(html, { waitUntil: 'networkidle0' })
+
+            // Generate PDF with settings to match the email template
+            const pdfBuffer = await page.pdf({
+                format: 'A4',
+                printBackground: true,
+                margin: {
+                    top: '10px',
+                    right: '10px',
+                    bottom: '10px',
+                    left: '10px',
+                },
+            })
+
+            // Close the browser
+            await browser.close()
+
+            logger.info(`✅ PDF generated for order ${orderId}`)
+            return Buffer.from(pdfBuffer)
+        } catch (error) {
+            const cleanMessage =
+                'Error in generateOrderInvoicePDF: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err)
+            throw error
+        }
     }
 
     /**

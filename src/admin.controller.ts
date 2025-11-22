@@ -15,7 +15,12 @@ import { logger } from './logger'
 import {
     Cart,
     CartProduct,
+    CouponCode,
+    CouponDiscounts,
+    CouponProducts,
+    CouponUsers,
     Order,
+    OrderCoupon,
     PriceList,
     Product,
     Role,
@@ -439,6 +444,9 @@ export class AdminController {
                         notes: row.notes,
                         deliveryNote: row.deliveryNote,
                         products: [],
+                        shippingDiscount: row.shippingDiscount,
+                        couponCode: row.couponCode,
+                        productDiscount: row.productDiscount,
                     }
                 }
                 ordersMap[orderId].products.push({
@@ -676,6 +684,7 @@ export class AdminController {
                 notes,
                 deliveryNote,
                 paymentMethod,
+                couponId,
             } = decryptedBody
             // Step 1: Check if user exists by customerPhone, if not create user
             let user = await User.findOne({
@@ -886,6 +895,26 @@ export class AdminController {
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                 })
                 isNewOrder = false
+                // Handle couponId: save or update in OrderCoupon table
+                const existingOrderCoupon = await OrderCoupon.findOne({
+                    where: { orderId: order.toJSON().id },
+                })
+                if (couponId) {
+                    if (existingOrderCoupon) {
+                        await existingOrderCoupon.update({
+                            couponCodeId: couponId,
+                        })
+                    } else {
+                        await OrderCoupon.create({
+                            orderId: order.toJSON().id,
+                            couponCodeId: couponId,
+                        })
+                    }
+                } else {
+                    await existingOrderCoupon.update({
+                        couponCodeId: null,
+                    })
+                }
             } else {
                 order = await Order.create({
                     userId: user.toJSON().id,
@@ -899,7 +928,29 @@ export class AdminController {
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                 })
+                order = await Order.findOne({
+                    where: {
+                        cartId: cart.toJSON().id,
+                        userId: user.toJSON().id,
+                    },
+                })
                 isNewOrder = true
+                // Handle couponId: save or update in OrderCoupon table
+                if (couponId) {
+                    const existingOrderCoupon = await OrderCoupon.findOne({
+                        where: { orderId: order.toJSON().id },
+                    })
+                    if (existingOrderCoupon) {
+                        await existingOrderCoupon.update({
+                            couponCodeId: couponId,
+                        })
+                    } else {
+                        await OrderCoupon.create({
+                            orderId: order.toJSON().id,
+                            couponCodeId: couponId,
+                        })
+                    }
+                }
             }
             if (isProductsModified === true || isNewOrder === true) {
                 const orderInvoiceData =
@@ -999,6 +1050,271 @@ export class AdminController {
                     error: encryptPayload({
                         error:
                             'Failed to create or update order. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('save-coupon')
+    async createCoupon(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Decrypt request
+            const decryptedBody = decryptPayload(body.request)
+            const {
+                couponId,
+                code,
+                startDate,
+                endDate,
+                isActive,
+                isGroupable,
+                isForNewUsers,
+                isForAllUsers,
+                discounts,
+                productIds,
+                userIds,
+            } = decryptedBody
+
+            // Validate required fields
+            if (
+                !code ||
+                !startDate ||
+                !endDate ||
+                !discounts ||
+                !productIds ||
+                !userIds
+            ) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Missing required fields: code, startDate, endDate, discounts, productIds, userIds.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            let couponCode
+            let isUpdate = false
+
+            if (couponId) {
+                // Update existing coupon
+                couponCode = await CouponCode.findByPk(couponId)
+                if (!couponCode) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Coupon not found.',
+                            }),
+                        },
+                        HttpStatus.NOT_FOUND,
+                    )
+                }
+                await couponCode.update({
+                    code,
+                    startDate: new Date(startDate),
+                    endDate: new Date(endDate),
+                    isActive: isActive !== undefined ? isActive : true,
+                    isGroupable: isGroupable !== undefined ? isGroupable : true,
+                    isForNewUsers:
+                        isForNewUsers !== undefined ? isForNewUsers : false,
+                    isForAllUsers:
+                        isForAllUsers !== undefined ? isForAllUsers : false,
+                })
+                isUpdate = true
+            } else {
+                // Create new CouponCode
+                couponCode = await CouponCode.create({
+                    code,
+                    startDate: new Date(startDate),
+                    endDate: new Date(endDate),
+                    isActive: isActive !== undefined ? isActive : true,
+                    isGroupable: isGroupable !== undefined ? isGroupable : true,
+                    isForNewUsers:
+                        isForNewUsers !== undefined ? isForNewUsers : false,
+                    isForAllUsers:
+                        isForAllUsers !== undefined ? isForAllUsers : false,
+                })
+            }
+
+            // Compute productIdsToCreate
+            let productIdsToCreate = productIds
+            if (productIds.includes('All')) {
+                const allProducts = await Product.findAll({
+                    attributes: ['id'],
+                })
+                productIdsToCreate = allProducts.map((p: any) => p.id)
+            }
+
+            // Compute userIdsToCreate
+            let userIdsToCreate = userIds
+            if (userIds.includes('All')) {
+                const allUsers = await User.findAll({
+                    attributes: ['id'],
+                })
+                userIdsToCreate = allUsers.map((u: any) => u.toJSON().id)
+            }
+            // Append all admin users without duplicating IDs
+            const adminUsers = await UserRole.findAll({
+                where: { roleId: 1 },
+                attributes: ['userId'],
+            })
+            const adminUserIds = adminUsers.map((ur: any) => ur.toJSON().userId)
+            userIdsToCreate = [
+                ...new Set([...userIdsToCreate, ...adminUserIds]),
+            ]
+
+            if (isUpdate) {
+                // Handle discounts selectively
+                const existingDiscounts = await CouponDiscounts.findAll({
+                    where: { couponCodeId: couponId },
+                })
+                const discountNamesInRequest = discounts.map((d: any) => d.name)
+                for (const discount of discounts) {
+                    const existing = existingDiscounts.find(
+                        (ed: any) => ed.toJSON().name === discount.name,
+                    )
+                    if (existing) {
+                        await existing.update({
+                            discount: discount.discount,
+                            flatrate:
+                                discount.flatrate !== undefined
+                                    ? discount.flatrate
+                                    : false,
+                        })
+                    } else {
+                        await CouponDiscounts.create({
+                            name: discount.name,
+                            discount: discount.discount,
+                            flatrate:
+                                discount.flatrate !== undefined
+                                    ? discount.flatrate
+                                    : false,
+                            couponCodeId: couponCode.id,
+                        })
+                    }
+                }
+                // Delete discounts not in request
+                for (const existing of existingDiscounts) {
+                    if (
+                        !discountNamesInRequest.includes(existing.toJSON().name)
+                    ) {
+                        await existing.destroy()
+                    }
+                }
+
+                // Handle products selectively
+                const existingProducts = await CouponProducts.findAll({
+                    where: { couponCodeId: couponId },
+                    attributes: ['productId', 'id'],
+                })
+                const existingProductIds = existingProducts.map(
+                    (ep: any) => ep.toJSON().productId,
+                )
+                for (const productId of productIdsToCreate) {
+                    if (!existingProductIds.includes(productId)) {
+                        await CouponProducts.create({
+                            couponCodeId: couponCode.id,
+                            productId,
+                        })
+                    }
+                }
+                // Delete products not in request
+                for (const existing of existingProducts) {
+                    if (
+                        !productIdsToCreate.includes(
+                            existing.toJSON().productId,
+                        )
+                    ) {
+                        await existing.destroy()
+                    }
+                }
+
+                // Handle users selectively
+                const existingUsers = await CouponUsers.findAll({
+                    where: { couponCodeId: couponId },
+                    attributes: ['userId', 'id'],
+                })
+                const existingUserIds = existingUsers.map(
+                    (eu: any) => eu.toJSON().userId,
+                )
+                for (const userId of userIdsToCreate) {
+                    if (!existingUserIds.includes(userId)) {
+                        await CouponUsers.create({
+                            couponCodeId: couponCode.id,
+                            userId,
+                        })
+                    }
+                }
+                // Delete users not in request
+                for (const existing of existingUsers) {
+                    if (!userIdsToCreate.includes(existing.toJSON().userId)) {
+                        await existing.destroy()
+                    }
+                }
+            } else {
+                // For new coupons, create all
+                for (const discount of discounts) {
+                    await CouponDiscounts.create({
+                        name: discount.name,
+                        discount: discount.discount,
+                        flatrate:
+                            discount.flatrate !== undefined
+                                ? discount.flatrate
+                                : false,
+                        couponCodeId: couponCode.id,
+                    })
+                }
+                for (const productId of productIdsToCreate) {
+                    await CouponProducts.create({
+                        couponCodeId: couponCode.id,
+                        productId,
+                    })
+                }
+                for (const userId of userIdsToCreate) {
+                    await CouponUsers.create({
+                        couponCodeId: couponCode.id,
+                        userId,
+                    })
+                }
+            }
+
+            return {
+                response: encryptPayload({
+                    couponId: couponCode.id,
+                    message: isUpdate
+                        ? 'Coupon updated successfully.'
+                        : 'Coupon created successfully.',
+                }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in createCoupon: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to create coupon. ' + errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

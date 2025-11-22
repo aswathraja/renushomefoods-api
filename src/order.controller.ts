@@ -6,9 +6,13 @@ import {
     HttpStatus,
     Post,
     Query,
+    Res,
 } from '@nestjs/common'
+import type { Response } from 'express'
 import * as jwt from 'jsonwebtoken'
 import * as sequelize from 'sequelize'
+import { sequelize as Sequelize } from './db'
+
 import { Op } from 'sequelize'
 import { AppService } from './app.service'
 import { logger } from './logger'
@@ -16,7 +20,11 @@ import {
     Cart,
     CartProduct,
     Category,
+    CouponCode,
+    CouponDiscounts,
+    CouponProducts,
     Order,
+    OrderCoupon,
     PriceList,
     Product,
     ProductImage,
@@ -71,6 +79,32 @@ export class OrderController {
                             },
                         ],
                     },
+                    {
+                        model: OrderCoupon,
+                        as: 'OrderCoupons',
+                        include: [
+                            {
+                                model: CouponCode,
+                                as: 'CouponCode',
+                                include: [
+                                    {
+                                        model: CouponDiscounts,
+                                        as: 'CouponDiscounts',
+                                    },
+                                    {
+                                        model: CouponProducts,
+                                        as: 'CouponProducts',
+                                        include: [
+                                            {
+                                                model: Product,
+                                                as: 'Product',
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
                 ],
             })
 
@@ -99,6 +133,94 @@ export class OrderController {
 
             const orderJSON = order.toJSON()
 
+            // Calculate subtotal
+            const subtotal = orderJSON.Cart.CartProducts.reduce(
+                (sum, cartProduct) =>
+                    sum +
+                    cartProduct.quantity * cartProduct.PriceList.unitprice,
+                0,
+            )
+
+            // Calculate coupon discount
+            let totalDiscount = 0
+            let shippingDiscount = 0
+            const orderCoupons = orderJSON.OrderCoupons
+            if (orderCoupons && orderCoupons.length > 0) {
+                const orderCoupon = orderCoupons[0] // Assuming one coupon per order
+                const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts
+                const couponProducts = orderCoupon.CouponCode.CouponProducts
+
+                // Get applicable products
+                const applicableProductIds = couponProducts.map(
+                    (cp) => cp.productId,
+                )
+
+                couponDiscounts.forEach((discount) => {
+                    let discountAmount = 0
+                    if (applicableProductIds.length === 0) {
+                        // Applies to all products
+                        if (discount.flatrate) {
+                            discountAmount = discount.discount
+                        } else {
+                            discountAmount =
+                                subtotal * (discount.discount / 100)
+                        }
+                    } else {
+                        // Applies to specific products
+                        const applicableSubtotal =
+                            orderJSON.Cart.CartProducts.filter((cp) =>
+                                applicableProductIds.includes(cp.productId),
+                            ).reduce(
+                                (sum, cartProduct) =>
+                                    sum +
+                                    cartProduct.quantity *
+                                        cartProduct.PriceList.unitprice,
+                                0,
+                            )
+                        if (discount.flatrate) {
+                            discountAmount = orderJSON.Cart.CartProducts.filter(
+                                (cp) =>
+                                    applicableProductIds.includes(cp.productId),
+                            ).reduce(
+                                (sum, cp) =>
+                                    sum +
+                                    (cp.PriceList.unitprice -
+                                        discount.discount) *
+                                        cp.quantity,
+                                0,
+                            )
+                            if (
+                                discount.name === 'Shipping' &&
+                                discount.flatrate
+                            ) {
+                                shippingDiscount = 99 - discount.discount
+                            } else if (
+                                discount.name === 'Shipping' &&
+                                discount.flatrate === false
+                            ) {
+                                shippingDiscount =
+                                    99 - 99 * (discount.discount / 100)
+                            }
+                        } else {
+                            discountAmount =
+                                applicableSubtotal * (discount.discount / 100)
+                        }
+
+                        if (discount.name === 'Shipping' && discount.flatrate) {
+                            shippingDiscount = 99 - discount.discount
+                        } else if (
+                            discount.name === 'Shipping' &&
+                            discount.flatrate === false
+                        ) {
+                            shippingDiscount = 99 * (discount.discount / 100)
+                        }
+                    }
+                    if (discount.name !== 'Shipping') {
+                        totalDiscount += discountAmount
+                    }
+                })
+            }
+
             // Format products from cart
             let products: any[] = []
             const cart = orderJSON.Cart
@@ -122,6 +244,10 @@ export class OrderController {
             }
 
             // Format order object
+            const couponCode =
+                orderCoupons.length > 0
+                    ? orderCoupons[0]?.CouponCode?.code
+                    : undefined
             const address = orderJSON.UserAddress
             const user = orderJSON.user
             const orderObj = {
@@ -147,6 +273,9 @@ export class OrderController {
                     cartId: cart?.id,
                     order: orderObj,
                     products,
+                    totalDiscount,
+                    shippingDiscount,
+                    couponCode,
                 }),
             }
             return encryptedResponse
@@ -575,6 +704,7 @@ export class OrderController {
                 token,
                 email,
                 username,
+                couponId,
             } = decryptPayload(body.request)
 
             // Normalize phone number: remove spaces and leading "+"
@@ -781,6 +911,22 @@ export class OrderController {
                 })
                 await order.reload() // Ensure the instance is reloaded with the generated id
             }
+
+            // Handle couponId: save or update in OrderCoupon table
+            if (couponId) {
+                const existingOrderCoupon = await OrderCoupon.findOne({
+                    where: { orderId: order.toJSON().id },
+                })
+                if (existingOrderCoupon) {
+                    await existingOrderCoupon.update({ couponCodeId: couponId })
+                } else {
+                    await OrderCoupon.create({
+                        orderId: order.toJSON().id,
+                        couponCodeId: couponId,
+                    })
+                }
+            }
+
             const orderInvoiceData = await this.appService.getOrderInvoiceData(
                 order.toJSON().id,
                 'Thank you for placing your order. Please find the invoice below.',
@@ -950,6 +1096,32 @@ export class OrderController {
                             },
                         ],
                     },
+                    {
+                        model: OrderCoupon,
+                        as: 'OrderCoupons',
+                        include: [
+                            {
+                                model: CouponCode,
+                                as: 'CouponCode',
+                                include: [
+                                    {
+                                        model: CouponDiscounts,
+                                        as: 'CouponDiscounts',
+                                    },
+                                    {
+                                        model: CouponProducts,
+                                        as: 'CouponProducts',
+                                        include: [
+                                            {
+                                                model: Product,
+                                                as: 'Product',
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
                 ],
                 order: [['id', 'DESC']],
             })
@@ -957,6 +1129,92 @@ export class OrderController {
             // Format each order
             const formattedOrders = orders.map((order) => {
                 const orderJSON = order.toJSON()
+
+                // Calculate subtotal
+                const subtotal = orderJSON.Cart.CartProducts.reduce(
+                    (sum, cartProduct) =>
+                        sum +
+                        cartProduct.quantity * cartProduct.PriceList.unitprice,
+                    0,
+                )
+
+                // Calculate coupon discount
+                let totalDiscount = 0
+                let shippingDiscount = 0
+                const orderCoupons = orderJSON.OrderCoupons
+                if (orderCoupons && orderCoupons.length > 0) {
+                    const orderCoupon = orderCoupons[0] // Assuming one coupon per order
+                    const couponDiscounts =
+                        orderCoupon.CouponCode.CouponDiscounts
+                    const couponProducts = orderCoupon.CouponCode.CouponProducts
+
+                    // Get applicable products
+                    const applicableProductIds = couponProducts.map(
+                        (cp) => cp.productId,
+                    )
+
+                    couponDiscounts.forEach((discount) => {
+                        let discountAmount = 0
+                        if (applicableProductIds.length === 0) {
+                            // Applies to all products
+                            if (discount.flatrate) {
+                                discountAmount = discount.discount
+                            } else {
+                                discountAmount =
+                                    subtotal * (discount.discount / 100)
+                            }
+                        } else {
+                            // Applies to specific products
+                            const applicableSubtotal =
+                                orderJSON.Cart.CartProducts.filter((cp) =>
+                                    applicableProductIds.includes(cp.productId),
+                                ).reduce(
+                                    (sum, cartProduct) =>
+                                        sum +
+                                        cartProduct.quantity *
+                                            cartProduct.PriceList.unitprice,
+                                    0,
+                                )
+                            if (discount.flatrate) {
+                                discountAmount =
+                                    orderJSON.Cart.CartProducts.filter((cp) =>
+                                        applicableProductIds.includes(
+                                            cp.productId,
+                                        ),
+                                    ).reduce(
+                                        (sum, cp) =>
+                                            sum +
+                                            (cp.PriceList.unitprice -
+                                                discount.discount) *
+                                                cp.quantity,
+                                        0,
+                                    )
+                                if (discount.name !== 'Shipping') {
+                                    totalDiscount += discountAmount
+                                }
+                            } else {
+                                discountAmount =
+                                    applicableSubtotal *
+                                    (discount.discount / 100)
+                                if (discount.name !== 'Shipping') {
+                                    totalDiscount += discountAmount
+                                }
+                            }
+                            if (
+                                discount.name === 'Shipping' &&
+                                discount.flatrate
+                            ) {
+                                shippingDiscount = 99 - discount.discount
+                            } else if (
+                                discount.name === 'Shipping' &&
+                                discount.flatrate === false
+                            ) {
+                                shippingDiscount =
+                                    99 - 99 * (discount.discount / 100)
+                            }
+                        }
+                    })
+                }
 
                 // Format products from cart
                 let products: any[] = []
@@ -983,6 +1241,11 @@ export class OrderController {
                 // Format order object
                 const address = orderJSON.UserAddress
                 const user = orderJSON.user
+                // Format order object
+                const couponCode =
+                    orderCoupons.length > 0
+                        ? orderCoupons[0]?.CouponCode?.code
+                        : undefined
                 const orderObj = {
                     id: orderJSON.id,
                     name: address?.name,
@@ -1006,6 +1269,9 @@ export class OrderController {
                     cartId: cart?.id,
                     order: orderObj,
                     products,
+                    totalDiscount,
+                    shippingDiscount,
+                    couponCode,
                 }
             })
 
@@ -1402,6 +1668,330 @@ export class OrderController {
                 {
                     error: encryptPayload({
                         error: 'Failed to reorder. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('download-invoice')
+    async downloadInvoice(@Body() body: any, @Res() res: Response) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { orderId, token } = decryptedBody
+
+            if (!orderId || !token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order ID and Token are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and find user
+            jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret')
+            const userSession = await UserSession.findOne({
+                where: { token, isExpired: false },
+            })
+            if (!userSession) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid or expired token.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+            // Check expiry
+            if (new Date() > userSession.expiry) {
+                await userSession.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            const userId = userSession.toJSON().userId
+            const user = await User.findByPk(userId, {
+                include: [{ model: Role, as: 'roles' }],
+            })
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            // Find order
+            const order = await Order.findByPk(orderId)
+            if (!order) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order not found.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check authorization: user owns the order or is admin
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const userRoles = user.toJSON().roles || []
+            const isAdmin = userRoles.some((role: any) => role.name === 'Admin')
+            if (!isOwner && !isAdmin) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Unauthorized to download this invoice.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Generate PDF
+            const pdfBuffer =
+                await this.appService.generateOrderInvoicePDF(orderId)
+
+            // Set response headers
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader(
+                'Content-Disposition',
+                `attachment; filename="Renus Home Foods - Order Invoice - ${orderId}.pdf"`,
+            )
+            res.setHeader('Content-Length', pdfBuffer.length)
+
+            // Send PDF buffer
+            res.send(pdfBuffer)
+        } catch (error) {
+            const cleanMessage =
+                'Error in downloadInvoice: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to download invoice. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('get-coupons')
+    async getCoupons(@Body() body: any) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const {
+                products,
+                token,
+                couponCode,
+                fromStartDate,
+                toStartDate,
+                fromEndDate,
+                toEndDate,
+                users,
+            } = decryptedBody
+            if (!Array.isArray(products) || !Array.isArray(users)) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Products array and Token are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+            let userId = null
+            if (token) {
+                // Verify token and find user
+                jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret')
+                const userSession = await UserSession.findOne({
+                    where: { token, isExpired: false },
+                })
+                if (!userSession) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Invalid or expired token.',
+                            }),
+                        },
+                        HttpStatus.UNAUTHORIZED,
+                    )
+                }
+                // Check expiry
+                if (new Date() > userSession.expiry) {
+                    await userSession.update({ isExpired: true })
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Session expired.',
+                            }),
+                        },
+                        HttpStatus.FORBIDDEN,
+                    )
+                }
+                userId = userSession.toJSON().userId
+            }
+            // Call SP to update coupon users for all users
+            await Sequelize.query('CALL UpdateCouponUsersForAllUsers()')
+
+            // Prepare parameters for SP
+            const p_products = products?.length > 0 ? products.join(',') : null
+            const p_users = users?.length > 0 ? users.join(',') : null
+            // Call SP
+            const results = await Sequelize.query(
+                'CALL GetFilteredCoupons(:userId, :products, :couponCode, :fromStartDate, :toStartDate, :fromEndDate, :toEndDate, :users)',
+                {
+                    replacements: {
+                        userId,
+                        products: p_products,
+                        couponCode: couponCode || null,
+                        fromStartDate: fromStartDate || null,
+                        toStartDate: toStartDate || null,
+                        fromEndDate: fromEndDate || null,
+                        toEndDate: toEndDate || null,
+                        users: p_users,
+                    },
+                },
+            )
+            const couponIdsStr = (results[0] as any)?.couponIds
+            const couponIds = couponIdsStr
+                ? couponIdsStr.split(',').map(Number)
+                : []
+            if (couponIds.length === 0) {
+                const encryptedResponse = {
+                    response: encryptPayload({ coupons: [] }),
+                }
+                return encryptedResponse
+            }
+
+            // Find coupons with associations
+            const coupons = await CouponCode.findAll({
+                where: { id: { [Op.in]: couponIds } },
+                include: [
+                    {
+                        model: User,
+                        required: false,
+                        as: 'users',
+                    },
+                    {
+                        model: CouponProducts,
+                        required: false,
+                        include: [
+                            {
+                                model: Product,
+                                include: [ProductImage, Category],
+                            },
+                        ],
+                    },
+                    {
+                        model: CouponDiscounts,
+                        required: false,
+                    },
+                ],
+            })
+            // Filter coupons based on user association
+            const filteredCoupons = coupons.filter((coupon) => {
+                const couponJSON = coupon.toJSON()
+                return userId === null
+                    ? couponJSON.isForNewUsers === true
+                    : couponJSON.users?.some((u: any) => u.id === userId)
+            })
+
+            // Format coupons
+            const formattedCoupons = filteredCoupons.map((coupon) => {
+                const couponJSON = coupon.toJSON()
+                return {
+                    id: couponJSON.id,
+                    code: couponJSON.code,
+                    startDate: new Date(
+                        couponJSON.startDate,
+                    ).toLocaleDateString('en-GB'),
+                    endDate: new Date(couponJSON.endDate).toLocaleDateString(
+                        'en-GB',
+                    ),
+                    isActive: couponJSON.isActive,
+                    isGroupable: couponJSON.isGroupable,
+                    isForAllUsers: couponJSON.isForAllUsers,
+                    isForNewUsers: couponJSON.isForNewUsers,
+                    discounts:
+                        couponJSON.CouponDiscounts?.map((discount: any) => ({
+                            id: discount.id,
+                            name: discount.name,
+                            discount: discount.discount,
+                            flatrate: discount.flatrate,
+                        })) || [],
+                    products:
+                        couponJSON.CouponProducts?.map((cp: any) => ({
+                            id: cp.productId,
+                            name: cp.Product?.name,
+                            tagline: cp.Product?.tagline,
+                            image: cp.Product?.ProductImages?.[0]?.fileName,
+                            category: cp.Product?.Category?.category,
+                        })) || [],
+                    users:
+                        couponJSON.users?.map((u: any) => ({
+                            id: u.id,
+                            name: u.name,
+                            phone: u.phone,
+                            email: u.email,
+                        })) || [],
+                }
+            })
+
+            const encryptedResponse = {
+                response: encryptPayload({ coupons: formattedCoupons }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            const cleanMessage =
+                'Error in getCoupons: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to fetch coupons. ' + errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

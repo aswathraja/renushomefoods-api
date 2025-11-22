@@ -316,6 +316,14 @@ PriceList.init(
             type: DataTypes.FLOAT,
             allowNull: false,
         },
+        basePrice: {
+            type: DataTypes.FLOAT,
+            allowNull: false,
+        },
+        bomCost: {
+            type: DataTypes.FLOAT,
+            allowNull: false,
+        },
         productid: {
             type: DataTypes.INTEGER.UNSIGNED,
             allowNull: false,
@@ -653,6 +661,234 @@ UserRole.init(
     },
 )
 
+// CouponCode Model
+export class CouponCode extends Model {}
+
+CouponCode.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        code: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            unique: true,
+        },
+        startDate: {
+            type: DataTypes.DATE,
+            allowNull: false,
+        },
+        endDate: {
+            type: DataTypes.DATE,
+            allowNull: false,
+        },
+        isActive: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+        isGroupable: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+        isForNewUsers: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        isForAllUsers: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'couponcodes',
+        timestamps: true,
+    },
+)
+
+// CouponDiscounts Model
+export class CouponDiscounts extends Model {
+    public id!: number
+    public name!: string
+    public discount!: number
+    public flatrate!: boolean
+    public couponCodeId!: number
+}
+
+CouponDiscounts.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        name: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        discount: {
+            type: DataTypes.FLOAT,
+            allowNull: false,
+        },
+        flatrate: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        couponCodeId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: CouponCode,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'coupondiscounts',
+        timestamps: true,
+    },
+)
+
+// CouponProducts Model
+export class CouponProducts extends Model {}
+
+CouponProducts.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        couponCodeId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: CouponCode,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        productId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Product,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'couponproducts',
+        timestamps: true,
+    },
+)
+
+// OrderCoupon Model
+export class OrderCoupon extends Model {}
+
+OrderCoupon.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        couponCodeId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+            references: {
+                model: CouponCode,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        orderId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Order,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'ordercoupons',
+        timestamps: true,
+    },
+)
+
+// CouponUsers Model (junction table for many-to-many between CouponCode and User)
+export class CouponUsers extends Model {
+    public id!: number
+    public couponCodeId!: number
+    public userId!: number
+}
+
+CouponUsers.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        couponCodeId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: CouponCode,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        userId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: User,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'couponusers',
+        timestamps: true,
+    },
+)
+
+// Associations for Coupon models
+CouponCode.hasMany(CouponDiscounts, { foreignKey: 'couponCodeId' })
+CouponDiscounts.belongsTo(CouponCode, { foreignKey: 'couponCodeId' })
+
+CouponCode.hasMany(CouponProducts, { foreignKey: 'couponCodeId' })
+CouponProducts.belongsTo(CouponCode, { foreignKey: 'couponCodeId' })
+
+CouponProducts.belongsTo(Product, { foreignKey: 'productId' })
+Product.hasMany(CouponProducts, { foreignKey: 'productId' })
+
+// Associations for OrderCoupon
+Order.hasMany(OrderCoupon, { foreignKey: 'orderId' })
+OrderCoupon.belongsTo(Order, { foreignKey: 'orderId' })
+
+CouponCode.hasMany(OrderCoupon, { foreignKey: 'couponCodeId' })
+OrderCoupon.belongsTo(CouponCode, { foreignKey: 'couponCodeId' })
+
+// Many-to-many associations
+
 // Many-to-many associations
 User.belongsToMany(Role, {
     through: UserRole,
@@ -662,5 +898,17 @@ User.belongsToMany(Role, {
 Role.belongsToMany(User, {
     through: UserRole,
     foreignKey: 'roleId',
+    as: 'users',
+})
+
+// Many-to-many associations for CouponUsers
+User.belongsToMany(CouponCode, {
+    through: CouponUsers,
+    foreignKey: 'userId',
+    as: 'couponCodes',
+})
+CouponCode.belongsToMany(User, {
+    through: CouponUsers,
+    foreignKey: 'couponCodeId',
     as: 'users',
 })

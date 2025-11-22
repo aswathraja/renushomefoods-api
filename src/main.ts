@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core'
+import compression from 'compression'
 import * as dotenv from 'dotenv'
 import * as express from 'express'
 import * as path from 'path'
@@ -8,6 +9,9 @@ dotenv.config()
 async function bootstrap() {
     const app = await NestFactory.create(AppModule)
     app.enableCors({ origin: '*' })
+
+    // Enable gzip compression globally
+    app.use(compression())
 
     // Set global API prefix first!
     app.setGlobalPrefix('api')

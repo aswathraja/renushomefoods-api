@@ -14,7 +14,7 @@ export class AppController {
         res.sendFile(join(__dirname, 'web', 'index.html'))
     }
 
-    @Post('get-pricelists-by-product')
+    @Post('get-products')
     async getPriceListsByProduct(@Body() body: { category?: string }) {
         try {
             const whereClause: any = {}
@@ -36,7 +36,7 @@ export class AppController {
             const products = await Product.findAll({
                 where: whereClause,
                 include: [
-                    { model: PriceList },
+                    { model: PriceList, attributes: { exclude: ['bomCost'] } },
                     { model: Category },
                     { model: ProductImage, order: [['rank', 'ASC']] },
                 ],
@@ -117,7 +117,7 @@ export class AppController {
         }
     }
 
-    @Post('product-with-pricelists')
+    @Post('save-product')
     async createOrUpdateProductWithPriceLists(@Body() body: any) {
         try {
             const {
