@@ -30,7 +30,6 @@
     "@nestjs/core": "^11.1.9",
     "@nestjs/platform-express": "^11.1.9",
     "@nestjs/serve-static": "^5.0.4",
-    "@types/morgan": "^1.9.10",
     "compression": "^1.8.1",
     "crypto-es": "^3.1.2",
     "dotenv": "^17.2.3",
@@ -48,7 +47,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
-    "@eslint/js": "^9.38.0",
+    "@eslint/js": "^9.39.1",
     "@nestjs/cli": "^11.0.12",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.1.9",
@@ -57,8 +56,9 @@
     "@types/compression": "^1.8.1",
     "@types/express": "^5.0.5",
     "@types/jest": "^30.0.0",
+    "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.0.0",
     "@types/node": "^24.10.1",
-    "@types/puppeteer": "^5.4.7",
     "@types/supertest": "^6.0.3",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
@@ -73,7 +73,7 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.47.0"
+    "typescript-eslint": "^8.48.0"
   },
   "jest": {
     "moduleFileExtensions": [
