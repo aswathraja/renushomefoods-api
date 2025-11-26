@@ -8,28 +8,133 @@ import {
     HttpStatus,
     Post,
 } from '@nestjs/common'
-import * as CryptoES from 'crypto-es'
 import * as jwt from 'jsonwebtoken'
 import { Op, Sequelize, UniqueConstraintError } from 'sequelize'
 import { AppService } from './app.service'
 import { sequelize } from './db'
 import { logger } from './logger'
 import { Order, Role, User, UserAddress, UserRole, UserSession } from './models'
-import { decryptPayload, encryptPayload } from './utils'
-
-function hashPassword(password: string): string {
-    return CryptoES.SHA256(password).toString()
-}
-
-function comparePassword(password: string, hash: string): boolean {
-    return CryptoES.SHA256(password).toString() === hash
-}
+import {
+    comparePassword,
+    decryptPayload,
+    encryptPayload,
+    hashPassword,
+} from './utils'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
 @Controller('user')
 export class UserController {
     constructor(private readonly appService: AppService) {}
+
+    @Post('validate-user')
+    async validateUser(@Body() body: { request: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { identifier } = decryptedBody
+
+            if (!identifier) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Identifier is required',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Phone number regex pattern:
+            // Matches +XX XXXXXXXXXX, +XXXXXXXXXXXX or XXXXXXXXXX formats
+            const phoneRegex = /^(\+?\d{1,3}\s?\d{6,14}|\+?\d{6,14})$/
+
+            // Normalize phone function similar to validate-details
+            const normalizePhone = (num: string) =>
+                num.replace(/^\+\d{1,3}|\s+/g, '')
+
+            let whereConditions: any = {}
+
+            if (phoneRegex.test(identifier)) {
+                const normalizedPhone = normalizePhone(identifier)
+                whereConditions = {
+                    [Op.or]: [
+                        { email: identifier },
+                        { username: identifier },
+                        sequelize.where(
+                            sequelize.fn(
+                                'RIGHT',
+                                sequelize.fn(
+                                    'REPLACE',
+                                    sequelize.fn(
+                                        'REPLACE',
+                                        sequelize.fn(
+                                            'REPLACE',
+                                            sequelize.col('phone'),
+                                            '+',
+                                            '',
+                                        ),
+                                        ' ',
+                                        '',
+                                    ),
+                                    '-',
+                                    '',
+                                ),
+                                10,
+                            ),
+                            normalizedPhone.slice(-10),
+                        ),
+                    ],
+                }
+            } else {
+                whereConditions = {
+                    [Op.or]: [{ email: identifier }, { username: identifier }],
+                }
+            }
+
+            const user = await User.findOne({
+                where: whereConditions,
+            })
+
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found with provided identifier.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Return the identifier in encrypted response
+            return {
+                response: encryptPayload({ identifier }),
+            }
+        } catch (error: any) {
+            const cleanMessage =
+                'Error in validateUser: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to validate user. ' + error?.message,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
     @Post('register')
     async register(@Body() body: { request: string }) {
         try {
@@ -264,8 +369,14 @@ export class UserController {
 
     @Post('validate-details')
     async checkAvailability(@Body() body: { request?: string }) {
+        let decryptedBody: {
+            username?: string
+            email?: string
+            phone?: string
+        }
+
         try {
-            const decryptedBody = decryptPayload(body.request)
+            decryptedBody = decryptPayload(body.request)
             const { username, email, phone } = decryptedBody
             if (
                 username === undefined ||
@@ -343,6 +454,7 @@ export class UserController {
                 throw new HttpException(
                     {
                         error: encryptPayload(errors),
+                        supress: true,
                     },
                     HttpStatus.FORBIDDEN,
                 )
@@ -361,8 +473,19 @@ export class UserController {
                     'Unknown error')
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
-
-            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                const response = error.getResponse() as any
+                const supress: Boolean = response.supress
+                if (Boolean(supress) === false) {
+                    logger.error(err)
+                } else {
+                    logger.info(
+                        `Validated User with Email :  ${decryptedBody.email} , Phone: ${decryptedBody.phone} , Username: ${decryptedBody.username}`,
+                    )
+                }
+                // use supress here
+            }
+            // Winston now logs message + stack
             // Re-throw if it's an HttpException (let Nest handle it)
             if (error instanceof HttpException) {
                 throw error
@@ -463,7 +586,9 @@ export class UserController {
                 // Update OTP in the database
                 await user.update({ otp: newOTP })
             }
-
+            const encryptedIdentifier = encryptPayload({
+                identifier: identifier,
+            })
             // Send OTP email
             await this.appService.sendMail({
                 to: user.toJSON().email,
@@ -472,7 +597,7 @@ export class UserController {
                 data: {
                     logo: 'https://renushomefoods.com/static/logo.png',
                     userFullName: user.toJSON().name,
-                    message: `Your OTP to reset your password for your account with with ${user.toJSON().email} and phone number ${user.toJSON().phone} is ${otp}. This OTP is valid for 10 minutes.`,
+                    message: `Your OTP to reset your password for your account with <b>${user.toJSON().email}</b> and phone number <b>${user.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
                     year: new Date().getFullYear().toString(),
                 },
             })
@@ -834,8 +959,9 @@ export class UserController {
                 )
             }
             if (user.toJSON().password === '') {
+                const otp = this.appService.generateRandomNumber(4)
                 await user.update({
-                    otp: this.appService.generateRandomNumber(4),
+                    otp: otp,
                 })
                 const updatedUser = await User.findOne({
                     where: {
@@ -878,6 +1004,9 @@ export class UserController {
                         ],
                     },
                 })
+                const encryptedIdentifier = encryptPayload({
+                    identifier: updatedUser.toJSON().username,
+                })
                 await this.appService.sendMail({
                     to: updatedUser.toJSON().email,
                     subject:
@@ -886,7 +1015,7 @@ export class UserController {
                     data: {
                         logo: 'https://renushomefoods.com/static/logo.png',
                         userFullName: updatedUser.toJSON().name,
-                        message: `Your OTP to reset your password for your account with with ${updatedUser.toJSON().email} and phone number ${updatedUser.toJSON().phone} is ${updatedUser.toJSON().otp}. This OTP is valid for 10 minutes.`,
+                        message: `Your OTP to reset your password for your account with <b>${user.toJSON().email}</b> and phone number <b>${user.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset`,
                         year: new Date().getFullYear().toString(),
                     },
                 })

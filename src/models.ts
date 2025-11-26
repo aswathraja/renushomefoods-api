@@ -912,3 +912,131 @@ CouponCode.belongsToMany(User, {
     foreignKey: 'couponCodeId',
     as: 'users',
 })
+
+// AdCampaign Model
+export class AdCampaign extends Model {
+    public id!: number
+    public name!: string
+    public startDate!: Date
+    public endDate!: Date
+    public imagePath!: string | null
+    public imageURL!: string | null
+    public message!: string
+    public subject!: string
+}
+
+AdCampaign.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        name: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        startDate: {
+            type: DataTypes.DATE,
+            allowNull: false,
+        },
+        endDate: {
+            type: DataTypes.DATE,
+            allowNull: false,
+        },
+        imagePath: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+        imageURL: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: 'https://renushomefoods.com',
+        },
+        message: {
+            type: DataTypes.TEXT,
+            allowNull: false,
+        },
+        subject: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'adcampaigns',
+        timestamps: true,
+    },
+)
+
+// AdCampaignUsers Model (junction table for many-to-many between AdCampaign and User)
+export class AdCampaignUsers extends Model {
+    public id!: number
+    public adCampaignId!: number
+    public userId!: number
+}
+
+AdCampaignUsers.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        adCampaignId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: AdCampaign,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        userId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: User,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'adcampaignusers',
+        timestamps: true,
+        indexes: [
+            {
+                unique: true,
+                fields: ['adCampaignId', 'userId'],
+                name: 'unique_adCampaign_user',
+            },
+        ],
+    },
+)
+
+AdCampaign.belongsToMany(User, {
+    through: AdCampaignUsers,
+    foreignKey: 'adCampaignId',
+    as: 'users',
+})
+User.belongsToMany(AdCampaign, {
+    through: AdCampaignUsers,
+    foreignKey: 'userId',
+    as: 'adCampaigns',
+})
+
+AdCampaign.hasMany(AdCampaignUsers, {
+    foreignKey: 'adCampaignId',
+    as: 'adCampaignUsers',
+})
+
+AdCampaignUsers.belongsTo(User, { foreignKey: 'userId', as: 'user' })
+AdCampaignUsers.belongsTo(AdCampaign, {
+    foreignKey: 'adCampaignId',
+    as: 'adCampaign',
+})
+
+User.hasMany(AdCampaignUsers, { foreignKey: 'userId', as: 'adCampaignUsers' })

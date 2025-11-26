@@ -6,13 +6,18 @@ import {
     HttpException,
     HttpStatus,
     Post,
+    UploadedFile,
+    UseInterceptors,
 } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 import * as jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
 import { AppService } from './app.service'
 import { sequelize } from './db'
 import { logger } from './logger'
 import {
+    AdCampaign,
+    AdCampaignUsers,
     Cart,
     CartProduct,
     CouponCode,
@@ -29,7 +34,13 @@ import {
     UserRole,
     UserSession,
 } from './models'
-import { decryptPayload, encryptPayload } from './utils'
+import {
+    decryptPayload,
+    deleteFileIfExists,
+    encryptPayload,
+    hashPassword,
+    saveFile,
+} from './utils'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
@@ -52,8 +63,19 @@ export class AdminController {
             )
         }
 
-        // Verify JWT token validity
-        jwt.verify(token, JWT_SECRET)
+        try {
+            // Verify JWT token validity
+            jwt.verify(token, JWT_SECRET)
+        } catch (err) {
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Invalid or expired token.',
+                    }),
+                },
+                HttpStatus.UNAUTHORIZED,
+            )
+        }
 
         // Check if token exists in DB and is not expired
         const session = await UserSession.findOne({
@@ -62,6 +84,7 @@ export class AdminController {
                 isExpired: false,
             },
         })
+
         if (!session) {
             throw new HttpException(
                 {
@@ -99,6 +122,7 @@ export class AdminController {
                 },
             ],
         })
+
         if (!user) {
             throw new HttpException(
                 {
@@ -125,6 +149,559 @@ export class AdminController {
         }
 
         return user
+    }
+
+    @Get('ad-campaigns')
+    async getAllAdCampaigns(@Headers() headers: Record<string, string>) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Fetch all AdCampaigns with associated users
+            const adCampaigns = await AdCampaign.findAll({
+                include: [
+                    {
+                        model: AdCampaignUsers,
+                        as: 'adCampaignUsers',
+                        include: [
+                            {
+                                model: User,
+                                as: 'user',
+                                attributes: ['id', 'name', 'email', 'phone'],
+                            },
+                        ],
+                    },
+                ],
+            })
+
+            return {
+                response: encryptPayload({ adCampaigns }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getAllAdCampaigns: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to fetch AdCampaigns. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    // New APIs for AdCampaigns:
+
+    @Post('get-ad-campaign')
+    async getAdCampaignById(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        try {
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            const { id } = decryptPayload(body.request)
+            if (!id) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Campaign id is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            const adCampaign = await AdCampaign.findByPk(id, {
+                include: [
+                    {
+                        model: User,
+                        as: 'users',
+                        through: { attributes: [] },
+                        attributes: ['id', 'name', 'email', 'phone'],
+                    },
+                ],
+            })
+
+            if (!adCampaign) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'AdCampaign not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            return {
+                response: encryptPayload({ adCampaign }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getAdCampaignById: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to fetch AdCampaign by id. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('save-ad-campaign')
+    @UseInterceptors(FileInterceptor('file'))
+    async saveOrUpdateAdCampaign(
+        @UploadedFile() file: Express.Multer.File,
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        try {
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+            const decryptedBody = decryptPayload(body.request)
+            const { id, name, startDate, endDate, message, subject, userIds } =
+                decryptedBody
+
+            if (
+                !name ||
+                !startDate ||
+                !endDate ||
+                !message ||
+                !subject ||
+                !Array.isArray(userIds)
+            ) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Missing required fields: name, startDate, endDate, message, subject, userIds',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Deduplicate userIds to prevent duplicates in AdCampaignUsers
+            const uniqueUserIds = Array.from(new Set(userIds))
+
+            // Ensure ADS_PATH environment variable is set
+            const adsPath = process.env.ADS_PATH
+            if (!adsPath) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'ADS_PATH environment variable is not set.',
+                        }),
+                    },
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                )
+            }
+
+            let adCampaign: AdCampaign
+
+            if (id) {
+                // Update existing campaign
+                adCampaign = await AdCampaign.findByPk(id)
+                if (!adCampaign) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'AdCampaign not found for update.',
+                            }),
+                        },
+                        HttpStatus.NOT_FOUND,
+                    )
+                }
+
+                let updateData: any = {
+                    name,
+                    startDate: new Date(startDate),
+                    endDate: new Date(endDate),
+                    message,
+                    subject,
+                }
+
+                if (file) {
+                    // Delete old file if exists
+                    deleteFileIfExists(adCampaign.toJSON().imagePath as string)
+                    // Save new file
+                    const savedImagePath = saveFile(file)
+                    // Add imagePath to update data
+                    updateData.imagePath = savedImagePath
+                }
+
+                // Update adCampaign using AdCampaign.update() method
+                await AdCampaign.update(updateData, {
+                    where: { id: adCampaign.toJSON().id },
+                })
+
+                // Instead of destroying all AdCampaignUsers, selectively update
+
+                // Fetch existing AdCampaignUsers for this campaign
+                const existingCampaignUsers = await AdCampaignUsers.findAll({
+                    where: { adCampaignId: adCampaign.toJSON().id },
+                })
+
+                const existingUserIds = existingCampaignUsers.map(
+                    (acu) => acu.toJSON().userId,
+                )
+                // Find userIds to add and remove
+                const userIdsToAdd = uniqueUserIds.filter(
+                    (userId: number) => !existingUserIds.includes(userId),
+                )
+                const userIdsToRemove = existingUserIds.filter(
+                    (userId: number) => !uniqueUserIds.includes(userId),
+                )
+
+                // Remove AdCampaignUsers not in the new userIds list
+                if (userIdsToRemove.length > 0) {
+                    await AdCampaignUsers.destroy({
+                        where: {
+                            adCampaignId: adCampaign.toJSON().id,
+                            userId: userIdsToRemove,
+                        },
+                    })
+                }
+
+                // Add new AdCampaignUsers that don't exist already
+                // Use bulkCreate with ignoreDuplicates to prevent duplicates if supported
+                if (userIdsToAdd.length > 0) {
+                    const recordsToCreate = userIdsToAdd.map((userId) => ({
+                        adCampaignId: adCampaign.toJSON().id,
+                        userId,
+                    }))
+                    await AdCampaignUsers.bulkCreate(recordsToCreate, {
+                        ignoreDuplicates: true, // only if supported by Sequelize and underlying DB
+                    })
+                }
+            } else {
+                // Creating new campaign
+                let savedImagePath = null
+                if (file) {
+                    savedImagePath = saveFile(file)
+                }
+
+                adCampaign = await AdCampaign.create({
+                    name,
+                    startDate: new Date(startDate),
+                    endDate: new Date(endDate),
+                    message,
+                    subject,
+                    imagePath: savedImagePath,
+                })
+
+                // Deduplicate userIds before creating
+                const uniqueUserIdsForCreate = Array.from(new Set(userIds))
+
+                const recordsToCreate = uniqueUserIdsForCreate.map(
+                    (userId) => ({
+                        adCampaignId: adCampaign.id,
+                        userId,
+                    }),
+                )
+                await AdCampaignUsers.bulkCreate(recordsToCreate, {
+                    ignoreDuplicates: true,
+                })
+            }
+
+            // Recommend adding a unique constraint on (adCampaignId, userId) at the DB level
+            // to enforce uniqueness and avoid duplicates even with race conditions
+
+            return {
+                response: encryptPayload({
+                    id: adCampaign.id,
+                    message: id
+                        ? 'AdCampaign updated successfully.'
+                        : 'AdCampaign created successfully.',
+                }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in saveOrUpdateAdCampaign: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to save or update AdCampaign. ' +
+                            errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('delete-ad-campaign')
+    async deleteAdCampaign(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        try {
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            const { id } = decryptPayload(body.request)
+
+            if (!id) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'AdCampaign id is required for deletion.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            const adCampaign = await AdCampaign.findByPk(id)
+            if (!adCampaign) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'AdCampaign not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Delete associated AdCampaignUsers
+            await AdCampaignUsers.destroy({
+                where: { adCampaignId: adCampaign.toJSON().id },
+            })
+
+            // Delete image file if exists
+            if (adCampaign.toJSON().imagePath) {
+                try {
+                    deleteFileIfExists(adCampaign.toJSON().imagePath as string)
+                } catch (err) {
+                    logger.error(
+                        new Error(
+                            `Failed to delete ad campaign image file: ${err.message}`,
+                        ),
+                    )
+                }
+            }
+
+            // Delete the AdCampaign
+            await adCampaign.destroy()
+
+            return {
+                response: encryptPayload({
+                    message: 'AdCampaign deleted successfully.',
+                }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in deleteAdCampaign: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to delete AdCampaign. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Get('roles')
+    async getRoles(@Headers() headers: Record<string, string>) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Fetch all roles
+            const roles = await Role.findAll()
+
+            // Return encrypted roles
+            return {
+                response: encryptPayload({ roles }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getRoles: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to fetch roles. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('user-details')
+    async getUserDetails(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Decrypt request to get userId, email and phone (optional)
+            const decryptedBody = decryptPayload(body.request)
+            const { userId, email, phone } = decryptedBody
+
+            if (!userId) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'userId is required',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Find user by id including all addresses and roles except password
+            const user = await User.findByPk(userId, {
+                attributes: ['id', 'name', 'email', 'phone'],
+                include: [
+                    {
+                        model: UserAddress,
+                        as: 'UserAddresses',
+                    },
+                    {
+                        model: Role,
+                        as: 'roles',
+                        through: { attributes: [] }, // exclude junction table attributes
+                    },
+                ],
+            })
+
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            // Optional: validate email and phone if provided match the found user
+            if (
+                (email && user.toJSON().email !== email) ||
+                (phone && user.toJSON().phone !== phone)
+            ) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Provided email or phone does not match user',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Return encrypted user details with addresses and roles
+            return {
+                response: encryptPayload({ user: user.toJSON() }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getUserDetails: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to fetch user details. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
     }
 
     @Post('dashboard-kpis')
@@ -534,6 +1111,128 @@ export class AdminController {
                 {
                     error: encryptPayload({
                         error: 'Failed to fetch users. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('users')
+    async getUsersWithDefaultAddress(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Decrypt filters from request body
+            const decryptedBody = decryptPayload(body.request)
+            const {
+                name,
+                phone,
+                email,
+                roles, // roles array of role IDs
+            } = decryptedBody
+
+            // Build where clause for User attributes dynamically
+            const userWhere: any = {}
+            if (name) {
+                userWhere.name = { [Op.like]: `%${name}%` }
+            }
+            if (phone) {
+                userWhere.phone = { [Op.like]: `%${phone}%` }
+            }
+            if (email) {
+                userWhere.email = { [Op.like]: `%${email}%` }
+            }
+
+            // Build role filtering condition if roles supplied
+            let roleWhere = undefined
+            if (Array.isArray(roles) && roles.length > 0) {
+                roleWhere = { id: { [Op.or]: roles } }
+            }
+
+            // Option A: Fetch users with filters, default address, and roles via Sequelize ORM
+            /*
+            const users = await User.findAll({
+                where: userWhere,
+                attributes: ['id', 'name', 'phone', 'email'],
+                include: [
+                    {
+                        model: UserAddress,
+                        as: 'UserAddresses',
+                        where: { isDefault: true },
+                        attributes: [
+                            'id',
+                            'name',
+                            'addressLine1',
+                            'city',
+                            'state',
+                            'country',
+                            'pincode',
+                            'phone',
+                            'isDefault',
+                        ],
+                        required: false,
+                    },
+                    {
+                        model: Role,
+                        as: 'roles',
+                        through: { attributes: [] },
+                        where: roleWhere,
+                        required: roleWhere ? true : false,
+                    },
+                ],
+            })
+            return {
+                response: encryptPayload({ users }),
+            }
+            */
+
+            // Option B: Call stored procedure to get filtered users (preferred for performance)
+            // Convert roles array to CSV string
+            const roleIds = Array.isArray(roles) ? roles.join(',') : ''
+
+            const results = await sequelize.query(
+                'CALL GetUsersWithDefaultAddress(:name, :phone, :email, :roles)',
+                {
+                    replacements: {
+                        name: name || null,
+                        phone: phone || null,
+                        email: email || null,
+                        roles: roleIds || null,
+                    },
+                },
+            )
+
+            return {
+                response: encryptPayload({ users: results }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getUsersWithDefaultAddress: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to fetch users with default address. ' +
+                            errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1315,6 +2014,479 @@ export class AdminController {
                 {
                     error: encryptPayload({
                         error: 'Failed to create coupon. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('save-user')
+    async saveUser(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
+        const transaction = await sequelize.transaction()
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Decrypt request
+            const decryptedBody = decryptPayload(body.request)
+            const { user, addresses } = decryptedBody
+
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User data is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            if (!Array.isArray(addresses)) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Addresses array is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            let userInstance
+            const isNewUser = !user.id
+
+            // Check if user exists by id or phone or email (unique keys)
+            if (user.id) {
+                userInstance = await User.findByPk(user.id, { transaction })
+            }
+            if (!userInstance && user.phone) {
+                userInstance = await User.findOne({
+                    where: { phone: user.phone },
+                    transaction,
+                })
+            }
+            if (!userInstance && user.email) {
+                userInstance = await User.findOne({
+                    where: { email: user.email },
+                    transaction,
+                })
+            }
+
+            if (userInstance) {
+                // Update existing user fields (excluding id)
+                // Save password only if provided (could be empty string or non-empty)
+                const passwordToSave =
+                    user.hasOwnProperty('password') &&
+                    user.password !== undefined
+                        ? hashPassword(user.password)
+                        : userInstance.toJSON().password
+                await userInstance.update(
+                    {
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone,
+                        username: user.username || user.phone,
+                        password: passwordToSave,
+                        otp: null,
+                    },
+                    { transaction },
+                )
+            } else {
+                // Create new user
+                const passwordToSave =
+                    user.hasOwnProperty('password') &&
+                    user.password !== undefined
+                        ? hashPassword(user.password)
+                        : ''
+                userInstance = await User.create(
+                    {
+                        name: user.name,
+                        email: user.email,
+                        phone: user.phone,
+                        username: user.username || user.phone,
+                        password: passwordToSave,
+                    },
+                    { transaction },
+                )
+            }
+
+            const userId = userInstance.toJSON().id
+
+            // Handle roles - sync roles sent in user.roles (array of {id,name})
+            if (Array.isArray(user.roles)) {
+                // Fetch current user roles
+                const currentUserRoles = await UserRole.findAll({
+                    where: { userId },
+                    transaction,
+                })
+                const currentRoleIds = currentUserRoles.map(
+                    (ur) => ur.toJSON().roleId,
+                )
+                const requestedRoleIds = user.roles
+
+                // Roles to add
+                const rolesToAdd = requestedRoleIds.filter(
+                    (id) => !currentRoleIds.includes(id),
+                )
+                // Roles to remove
+                const rolesToRemove = currentRoleIds.filter(
+                    (id) => !requestedRoleIds.includes(id),
+                )
+
+                // Add missing roles
+                for (const roleId of rolesToAdd) {
+                    await UserRole.create(
+                        {
+                            userId,
+                            roleId,
+                        },
+                        { transaction },
+                    )
+                }
+
+                // Remove roles not requested anymore
+                if (rolesToRemove.length > 0) {
+                    await UserRole.destroy({
+                        where: {
+                            userId,
+                            roleId: rolesToRemove,
+                        },
+                        transaction,
+                    })
+                }
+            }
+
+            // Logic to delete UserAddresses not in the incoming addresses array
+            const existingAddresses = await UserAddress.findAll({
+                where: { userId },
+                transaction,
+            })
+            const incomingAddressIds = addresses
+                .filter((addr: any) => addr.id)
+                .map((addr: any) => addr.id)
+            for (const existingAddress of existingAddresses) {
+                if (!incomingAddressIds.includes(existingAddress.toJSON().id)) {
+                    await existingAddress.destroy({ transaction })
+                }
+            }
+
+            // If new user and password is not set (empty or undefined), send reset password email
+            const passwordIsSet =
+                user.hasOwnProperty('password') &&
+                typeof user.password === 'string' &&
+                user.password !== ''
+            const encryptedIdentifier = encryptPayload({
+                identifier: userInstance.toJSON().username,
+            })
+            if (isNewUser && !passwordIsSet) {
+                const otp = this.appService.generateRandomNumber(4)
+                await userInstance.update({ otp }, { transaction })
+                await this.appService.sendMail({
+                    to: userInstance.toJSON().email,
+                    subject:
+                        "Renu's Home Foods - Password Reset OTP Verification",
+                    template: 'simple-message',
+                    data: {
+                        logo: 'https://renushomefoods.com/static/logo.png',
+                        userFullName: userInstance.toJSON().name,
+                        message: `Your OTP to reset your password for your account with <b>${user.toJSON().email}</b> and phone number <b>${user.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
+                        year: new Date().getFullYear().toString(),
+                    },
+                })
+            }
+            // Handle resetPassword boolean if true, generate OTP and send email
+            if (user.resetPassword === true) {
+                const otp = this.appService.generateRandomNumber(4)
+                await userInstance.update({ otp }, { transaction })
+                await this.appService.sendMail({
+                    to: userInstance.toJSON().email,
+                    subject:
+                        "Renu's Home Foods - Password Reset OTP Verification",
+                    template: 'simple-message',
+                    data: {
+                        logo: 'https://renushomefoods.com/static/logo.png',
+                        userFullName: userInstance.toJSON().name,
+                        message: `Your OTP to reset your password for your account with <b>${user.toJSON().email}</b> and phone number <b>${user.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
+                        year: new Date().getFullYear().toString(),
+                    },
+                })
+            }
+
+            // Save or update addresses
+            for (const addr of addresses) {
+                if (addr.id) {
+                    // Update existing address if belongs to user
+                    const existingAddress = await UserAddress.findOne({
+                        where: { id: addr.id, userId },
+                        transaction,
+                    })
+                    if (existingAddress) {
+                        await existingAddress.update(
+                            {
+                                name: addr.name,
+                                addressLine1: addr.addressLine1,
+                                city: addr.city,
+                                state: addr.state,
+                                country: addr.country,
+                                pincode: addr.pincode,
+                                phone: addr.phone,
+                                isDefault:
+                                    addr.isDefault !== undefined
+                                        ? addr.isDefault
+                                        : existingAddress.isDefault,
+                            },
+                            { transaction },
+                        )
+                    } else {
+                        // Address id given but not found or mismatched userId, create new address anyway
+                        await UserAddress.create(
+                            {
+                                userId,
+                                name: addr.name,
+                                addressLine1: addr.addressLine1,
+                                city: addr.city,
+                                state: addr.state,
+                                country: addr.country,
+                                pincode: addr.pincode,
+                                phone: addr.phone,
+                                isDefault: addr.isDefault || false,
+                            },
+                            { transaction },
+                        )
+                    }
+                } else {
+                    // Create new address
+                    await UserAddress.create(
+                        {
+                            userId,
+                            name: addr.name,
+                            addressLine1: addr.addressLine1,
+                            city: addr.city,
+                            state: addr.state,
+                            country: addr.country,
+                            pincode: addr.pincode,
+                            phone: addr.phone,
+                            isDefault: addr.isDefault || false,
+                        },
+                        { transaction },
+                    )
+                }
+            }
+
+            await transaction.commit()
+
+            return {
+                response: encryptPayload({
+                    userId,
+                    message:
+                        'User and addresses saved or updated successfully.',
+                }),
+            }
+        } catch (error) {
+            await transaction.rollback()
+            const cleanMessage =
+                'Error in saveUser: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to save or update user. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('send-ad-emails')
+    async sendAdCampaignEmails(@Body() body: { request: string }) {
+        try {
+            // Decrypt body to get adCampaign id and token
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody
+
+            if (!id || !token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'AdCampaign id and token are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Authenticate admin using token from decrypted body
+            try {
+                jwt.verify(token, JWT_SECRET)
+            } catch (err) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid or expired token.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            // Check if token exists in DB and is not expired
+            const session = await UserSession.findOne({
+                where: {
+                    token,
+                    isExpired: false,
+                },
+            })
+
+            if (!session) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session not found or expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Fetch user and verify admin role
+            const userId = session.toJSON().userId
+            const user = await User.findByPk(userId, {
+                include: [
+                    {
+                        model: Role,
+                        as: 'roles',
+                        through: { attributes: [] },
+                    },
+                ],
+            })
+
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            const roles = user.toJSON().roles || []
+            const isAdmin = roles.some((role: any) => role.id === 1)
+            if (!isAdmin) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Access denied. Admin role required.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Fetch AdCampaign by id including users
+            const adCampaign = await AdCampaign.findByPk(id, {
+                include: [
+                    {
+                        model: User,
+                        as: 'users',
+                        through: { attributes: [] },
+                        attributes: ['id', 'email', 'name'],
+                    },
+                ],
+            })
+
+            if (!adCampaign) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'AdCampaign not found.',
+                        }),
+                    },
+                    HttpStatus.NOT_FOUND,
+                )
+            }
+
+            const { subject, message, imagePath, imageURL } =
+                adCampaign.toJSON()
+            // Send emails to all users in the campaign
+            const users = adCampaign.toJSON().users || []
+
+            // For each user, send email (async)
+            const emailPromises = users.map((user: any) => {
+                console.log({
+                    logo: 'https://renushomefoods.com/static/logo.png',
+                    userName: user.name,
+                    message,
+                    campaignImage: process.env.WEB_HOST + '/static' + imagePath,
+                    imageURL,
+                })
+                // return new Promise<void>(async (resolve, reject) => {
+                //     resolve()
+                // })
+                return this.appService.sendMail({
+                    to: user.email,
+                    subject: subject || 'Ad Campaign',
+                    template: 'ad-campaign',
+                    data: {
+                        logo: 'https://renushomefoods.com/static/logo.png',
+                        userName: user.name,
+                        message,
+                        campaignImage:
+                            process.env.WEB_HOST + '/static' + imagePath,
+                        imageURL,
+                    },
+                })
+            })
+
+            await Promise.all(emailPromises)
+
+            return {
+                response: encryptPayload({
+                    message: `Emails sent successfully to ${users.length} users.`,
+                }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in sendAdCampaignEmails: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to send ad campaign emails. ' +
+                            errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
