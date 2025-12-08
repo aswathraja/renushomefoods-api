@@ -33,17 +33,14 @@ User.init(
         username: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
         },
         email: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
         },
         phone: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
         },
         password: {
             type: DataTypes.STRING,
@@ -61,6 +58,23 @@ User.init(
         sequelize,
         tableName: 'users',
         timestamps: true, // helpful for tracking user creation and updates
+        indexes: [
+            {
+                unique: true,
+                fields: ['username'],
+                name: 'users_username_unique',
+            },
+            {
+                unique: true,
+                fields: ['email'],
+                name: 'users_email_unique',
+            },
+            {
+                unique: true,
+                fields: ['phone'],
+                name: 'users_phone_unique',
+            },
+        ],
     },
 )
 
@@ -93,12 +107,10 @@ UserSession.init(
         token: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
         },
         prevToken: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
         },
         expiry: {
             type: DataTypes.DATE,
@@ -119,6 +131,18 @@ UserSession.init(
         sequelize,
         tableName: 'usersessions',
         timestamps: true,
+        indexes: [
+            {
+                unique: true,
+                fields: ['token'],
+                name: 'usersessions_token_unique',
+            },
+            {
+                unique: true,
+                fields: ['prevToken'],
+                name: 'usersessions_prevToken_unique',
+            },
+        ],
     },
 )
 
@@ -242,6 +266,11 @@ Category.init(
             type: DataTypes.STRING,
             allowNull: false,
         },
+        type: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: 'Product',
+        },
         rank: {
             type: DataTypes.INTEGER,
             allowNull: true,
@@ -252,15 +281,97 @@ Category.init(
             allowNull: true,
             defaultValue: null,
         },
+        description: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            defaultValue: null,
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
     },
     {
         sequelize,
         tableName: 'categories',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
-export class Product extends Model {}
+export class Location extends Model {}
+
+Location.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        name: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        floor: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        room: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        rack: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        addressLine1: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        city: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        state: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        country: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        photo: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'locations',
+        timestamps: true,
+    },
+)
+
+export class Product extends Model {
+    public readonly createdAt!: Date
+    public readonly updatedAt!: Date
+}
 
 Product.init(
     {
@@ -291,15 +402,28 @@ Product.init(
             allowNull: true,
             defaultValue: null,
         },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
     },
     {
         sequelize,
         tableName: 'products',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
-export class PriceList extends Model {}
+export class PriceList extends Model {
+    public readonly createdAt!: Date
+    public readonly updatedAt!: Date
+}
 
 PriceList.init(
     {
@@ -333,11 +457,25 @@ PriceList.init(
             },
             onDelete: 'CASCADE',
         },
+        quantity: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
     },
     {
         sequelize,
         tableName: 'pricelists',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
@@ -373,11 +511,21 @@ ProductImage.init(
             allowNull: true,
             defaultValue: null,
         },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
     },
     {
         sequelize,
         tableName: 'productimages',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
@@ -435,7 +583,7 @@ Cart.init(
     {
         sequelize,
         tableName: 'carts',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
@@ -484,7 +632,7 @@ CartProduct.init(
     {
         sequelize,
         tableName: 'cartproducts',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
@@ -572,7 +720,7 @@ Order.init(
     {
         sequelize,
         tableName: 'orders',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
@@ -611,13 +759,29 @@ Role.init(
         name: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
         },
     },
     {
         sequelize,
         tableName: 'roles',
-        timestamps: false,
+        timestamps: true,
+        indexes: [
+            {
+                unique: true,
+                fields: ['name'],
+                name: 'roles_name_unique',
+            },
+        ],
     },
 )
 
@@ -653,11 +817,21 @@ UserRole.init(
             },
             onDelete: 'CASCADE',
         },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
     },
     {
         sequelize,
         tableName: 'userroles',
-        timestamps: false,
+        timestamps: true,
     },
 )
 
@@ -674,7 +848,6 @@ CouponCode.init(
         code: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
         },
         startDate: {
             type: DataTypes.DATE,
@@ -1040,3 +1213,282 @@ AdCampaignUsers.belongsTo(AdCampaign, {
 })
 
 User.hasMany(AdCampaignUsers, { foreignKey: 'userId', as: 'adCampaignUsers' })
+
+// Item Model
+export class Item extends Model {
+    public id!: number
+    public name!: string
+    public description!: string
+    public type!: string
+    public categoryId?: number
+    public readonly createdAt!: Date
+    public readonly updatedAt!: Date
+}
+
+Item.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        name: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        description: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        categoryId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+            references: {
+                model: Category,
+                key: 'id',
+            },
+            onDelete: 'SET NULL',
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'items',
+        timestamps: true,
+    },
+)
+
+// ItemInvoice Model
+export class ItemInvoice extends Model {
+    public id!: number
+    public date!: Date
+    public itemId!: number
+    public price!: number
+    public quantity!: number
+}
+
+ItemInvoice.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        date: {
+            type: DataTypes.DATE,
+            allowNull: false,
+        },
+        itemId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Item,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        weight: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        unitprice: {
+            type: DataTypes.FLOAT,
+            allowNull: false,
+        },
+        basePrice: {
+            type: DataTypes.FLOAT,
+            allowNull: true,
+        },
+        quantity: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'iteminvoices',
+        timestamps: true,
+    },
+)
+
+// ProductLocation Model (junction table for many-to-many between Product and Location)
+export class ProductLocation extends Model {
+    public id!: number
+    public productId!: number
+    public locationId!: number
+    public quantity!: number
+}
+
+ProductLocation.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        productId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Product,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        locationId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Location,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        quantity: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'productlocations',
+        timestamps: true,
+    },
+)
+
+// ItemLocation Model (junction table for many-to-many between Item and Location)
+export class ItemLocation extends Model {
+    public id!: number
+    public itemId!: number
+    public locationId!: number
+    public quantity!: number
+}
+
+ItemLocation.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        itemId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Item,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        locationId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Location,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        quantity: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'itemlocations',
+        timestamps: true,
+    },
+)
+
+// ItemImage Model
+export class ItemImage extends Model {
+    public id!: number
+    public itemId!: number
+    public image!: string
+    public type!: string
+}
+
+ItemImage.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        itemId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Item,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        image: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        type: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        rank: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'itemimages',
+        timestamps: true,
+    },
+)
+
+// Associations for Product models
+Product.belongsToMany(Location, {
+    through: ProductLocation,
+    foreignKey: 'productId',
+    as: 'locations',
+})
+Location.belongsToMany(Product, {
+    through: ProductLocation,
+    foreignKey: 'locationId',
+    as: 'products',
+})
+
+// Associations for Item models
+Item.hasMany(ItemInvoice, { foreignKey: 'itemId' })
+ItemInvoice.belongsTo(Item, { foreignKey: 'itemId' })
+
+Item.belongsTo(Category, { foreignKey: 'categoryId' })
+Category.hasMany(Item, { foreignKey: 'categoryId' })
+
+Item.hasMany(ItemImage, { foreignKey: 'itemId' })
+ItemImage.belongsTo(Item, { foreignKey: 'itemId' })
+
+Item.hasMany(ItemLocation, { foreignKey: 'itemId' })
+ItemLocation.belongsTo(Item, { foreignKey: 'itemId' })
+ItemLocation.belongsTo(Location, { foreignKey: 'locationId' })
+
+Item.belongsToMany(Location, {
+    through: ItemLocation,
+    foreignKey: 'itemId',
+    as: 'locations',
+})
+Location.belongsToMany(Item, {
+    through: ItemLocation,
+    foreignKey: 'locationId',
+    as: 'items',
+})

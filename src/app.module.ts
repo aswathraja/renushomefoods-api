@@ -3,6 +3,7 @@ import { AdminController } from './admin.controller'
 import { AppController } from './app.controller'
 import { AppService } from './app.service'
 import { connectToDatabase } from './db'
+import { InventoryController } from './inventory.controller'
 import { OrderController } from './order.controller'
 import { UserController } from './user.controller'
 
@@ -19,6 +20,7 @@ import { UserController } from './user.controller'
         AdminController,
         UserController,
         OrderController,
+        InventoryController,
     ],
     providers: [AppService],
 })

@@ -56,7 +56,8 @@ export class AppService {
      * @returns The parsed number or 0.
      */
     public sanitizeStringToNumber(value: string | null | undefined): number {
-        if (value == null) return 0
+        if (Boolean(value) === false) return 0
+        if (typeof value === 'number') return value
         const cleaned = value.replace(/₹|\s/g, '')
         const num = parseFloat(cleaned)
         return isNaN(num) ? 0 : num

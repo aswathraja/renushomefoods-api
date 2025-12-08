@@ -151,29 +151,104 @@ export class AdminController {
         return user
     }
 
-    @Get('ad-campaigns')
-    async getAllAdCampaigns(@Headers() headers: Record<string, string>) {
+    @Post('ad-campaigns')
+    async getAllAdCampaigns(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+    ) {
         try {
             // Authenticate admin
             const authHeader = headers['authorization'] || ''
             await this.authenticateAdmin(authHeader)
 
-            // Fetch all AdCampaigns with associated users
-            const adCampaigns = await AdCampaign.findAll({
-                include: [
-                    {
-                        model: AdCampaignUsers,
-                        as: 'adCampaignUsers',
-                        include: [
-                            {
-                                model: User,
-                                as: 'user',
-                                attributes: ['id', 'name', 'email', 'phone'],
-                            },
-                        ],
+            // Decrypt request to extract filters
+            const {
+                name,
+                fromStartDate,
+                toStartDate,
+                fromEndDate,
+                toEndDate,
+                subject,
+                message,
+                users,
+            } = decryptPayload(body.request)
+            // Adjust dates to be timezone agnostic and filter by date only
+            let adjustedFromStartDate = fromStartDate
+            let adjustedToStartDate = toStartDate
+            let adjustedFromEndDate = fromEndDate
+            let adjustedToEndDate = toEndDate
+            if (fromStartDate) {
+                adjustedFromStartDate = new Date(
+                    fromStartDate + 'T00:00:00.000Z',
+                )
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' ')
+            }
+            if (toStartDate) {
+                adjustedToStartDate = new Date(toStartDate + 'T23:59:59.999Z')
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' ')
+            }
+            if (fromEndDate) {
+                adjustedFromEndDate = new Date(fromEndDate + 'T00:00:00.000Z')
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' ')
+            }
+            if (toEndDate) {
+                adjustedToEndDate = new Date(toEndDate + 'T23:59:59.999Z')
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' ')
+            }
+
+            // Convert users array to CSV string
+            const userIds = Array.isArray(users) ? users.join(',') : ''
+            // Call stored procedure
+            const results = await sequelize.query(
+                'CALL GetAdCampaigns(:name, :fromStartDate, :endStartDate, :fromEndDate, :toEndDate, :subject, :message, :userIds)',
+                {
+                    replacements: {
+                        name: name || null,
+                        fromStartDate: adjustedFromStartDate || null,
+                        endStartDate: adjustedToStartDate || null,
+                        fromEndDate: adjustedFromEndDate || null,
+                        toEndDate: adjustedToEndDate || null,
+                        subject: subject || null,
+                        message: message || null,
+                        userIds: userIds || null,
                     },
-                ],
+                },
+            )
+
+            // Group users by adCampaignId
+            const campaignsMap: { [key: number]: any } = {}
+            ;(results as any[]).forEach((row: any) => {
+                const adCampaignId = row.adCampaignId
+                if (!campaignsMap[adCampaignId]) {
+                    campaignsMap[adCampaignId] = {
+                        id: row.adCampaignId,
+                        name: row.name,
+                        startDate: row.startDate,
+                        endDate: row.endDate,
+                        subject: row.subject,
+                        message: row.message,
+                        imagePath: row.imagePath,
+                        users: [],
+                    }
+                }
+                if (row.userId) {
+                    campaignsMap[adCampaignId].users.push({
+                        id: row.userId,
+                        name: row.userName,
+                        email: row.userEmail,
+                        phone: row.userPhone,
+                    })
+                }
             })
+            const adCampaigns = Object.values(campaignsMap)
 
             return {
                 response: encryptPayload({ adCampaigns }),
@@ -186,7 +261,7 @@ export class AdminController {
                     error.message ||
                     'Unknown error')
             const err = new Error(cleanMessage)
-            err.stack = error.stack // keep original stack
+            err.stack = error.stack
 
             logger.error(err)
             if (error instanceof HttpException) {
@@ -316,13 +391,13 @@ export class AdminController {
             // Deduplicate userIds to prevent duplicates in AdCampaignUsers
             const uniqueUserIds = Array.from(new Set(userIds))
 
-            // Ensure ADS_PATH environment variable is set
-            const adsPath = process.env.ADS_PATH
+            // Ensure STATIC_PATH environment variable is set
+            const adsPath = process.env.STATIC_PATH
             if (!adsPath) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: 'ADS_PATH environment variable is not set.',
+                            error: 'STATIC_PATH environment variable is not set.',
                         }),
                     },
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -357,7 +432,7 @@ export class AdminController {
                     // Delete old file if exists
                     deleteFileIfExists(adCampaign.toJSON().imagePath as string)
                     // Save new file
-                    const savedImagePath = saveFile(file)
+                    const savedImagePath = saveFile(file, 'ads')
                     // Add imagePath to update data
                     updateData.imagePath = savedImagePath
                 }
@@ -410,7 +485,7 @@ export class AdminController {
                 // Creating new campaign
                 let savedImagePath = null
                 if (file) {
-                    savedImagePath = saveFile(file)
+                    savedImagePath = saveFile(file, 'ads')
                 }
 
                 adCampaign = await AdCampaign.create({
@@ -1033,18 +1108,24 @@ export class AdminController {
                     categoryName: row.categoryName,
                     productTotal: row.productTotal,
                     priceListId: row.priceListId,
+                    productDiscount: row.productDiscount,
                 })
             })
             const orders = Object.values(ordersMap)
-
             // Calculate orderTotal for each order
             orders.forEach((order: any) => {
                 const orderTotal = order.products.reduce(
                     (sum: number, product: any) =>
-                        sum + (product.productTotal || 0),
+                        sum + (product?.productTotal || 0),
+                    0,
+                )
+                const productDiscount = order.products.reduce(
+                    (sum: number, product: any) =>
+                        sum + (product?.productDiscount || 0),
                     0,
                 )
                 order.orderTotal = orderTotal
+                order.productDiscount = productDiscount
             })
 
             return {
@@ -2433,16 +2514,6 @@ export class AdminController {
 
             // For each user, send email (async)
             const emailPromises = users.map((user: any) => {
-                console.log({
-                    logo: 'https://renushomefoods.com/static/logo.png',
-                    userName: user.name,
-                    message,
-                    campaignImage: process.env.WEB_HOST + '/static' + imagePath,
-                    imageURL,
-                })
-                // return new Promise<void>(async (resolve, reject) => {
-                //     resolve()
-                // })
                 return this.appService.sendMail({
                     to: user.email,
                     subject: subject || 'Ad Campaign',

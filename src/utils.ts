@@ -9,7 +9,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
 // Use a strong secret key (store securely, never hardcode in production)
 const SECRET_KEY = process.env.ENCRYPTION_KEY
-const adsPath = process.env.ADS_PATH
+const adsPath = process.env.STATIC_PATH
+const inventoryPath = process.env.INVENTORY_PATH
 // Encrypt payload
 export function encryptPayload(payload: any): string {
     const data = JSON.stringify(payload)
@@ -36,16 +37,40 @@ export function comparePassword(password: string, hash: string): boolean {
     return SHA256(password).toString() === hash
 }
 
-// Helper to save uploaded file to ADS_PATH and return imagePath
-export const saveFile = (uploadedFile: Express.Multer.File): string => {
+// Helper to save uploaded file based on type and return imagePath
+export const saveFile = (
+    uploadedFile: Express.Multer.File,
+    type: string,
+): string => {
     if (!uploadedFile) return null
-    if (!existsSync(adsPath)) {
-        mkdirSync(adsPath, { recursive: true })
+
+    let basePath: string
+    let returnPrefix: string
+
+    if (type === 'ads') {
+        basePath = adsPath
+        returnPrefix = '/ads/'
+    } else if (
+        ['inventory', 'category', 'product', 'item', 'location'].includes(type)
+    ) {
+        basePath = inventoryPath
+        if (type === 'category') returnPrefix = '/categories/'
+        else if (type === 'product') returnPrefix = '/products/'
+        else if (type === 'item') returnPrefix = '/items/'
+        else if (type === 'location') returnPrefix = '/locations/'
+        else if (type === 'inventory') returnPrefix = '/inventory/'
+    } else {
+        throw new Error('Invalid type')
     }
+
+    if (!existsSync(path.join(basePath, returnPrefix))) {
+        mkdirSync(path.join(basePath, returnPrefix), { recursive: true })
+    }
+
     const fileName = uploadedFile.originalname
-    const filePath = path.join(adsPath, fileName)
+    const filePath = path.join(basePath, returnPrefix, fileName)
     writeFileSync(filePath, uploadedFile.buffer)
-    return '/ads/' + fileName
+    return returnPrefix + fileName
 }
 
 // Helper to delete file if exists
@@ -54,7 +79,7 @@ export const deleteFileIfExists = (filePath: string) => {
         throw new HttpException(
             {
                 error: encryptPayload({
-                    error: 'ADS_PATH environment variable is not set.',
+                    error: 'STATIC_PATH environment variable is not set.',
                 }),
             },
             HttpStatus.INTERNAL_SERVER_ERROR,
