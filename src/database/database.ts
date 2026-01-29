@@ -9,5 +9,8 @@ export const sequelize = new Sequelize(
         host: process.env.DB_HOST || '',
         dialect: 'mysql',
         logging: process.env.SQL_LOGGING === 'true', // Set to true for SQL query logging
+        dialectOptions: {
+            multipleStatements: true, // Enable multiple statements for stored procedures
+        },
     },
 )

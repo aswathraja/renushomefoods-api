@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common'
 import { readFileSync } from 'fs'
 import Handlebars from 'handlebars'
 import * as nodemailer from 'nodemailer'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import puppeteer from 'puppeteer'
-import { logger } from './logger'
+import { logger } from '../logger/logger'
 import {
     Cart,
     CartProduct,
@@ -17,7 +17,7 @@ import {
     Product,
     User,
     UserAddress,
-} from './models'
+} from '../models/models'
 
 // Register Handlebars helpers
 Handlebars.registerHelper('eq', function (a, b) {
@@ -160,7 +160,7 @@ export class AppService {
             const items = order
                 .toJSON()
                 .Cart.CartProducts.map((cartProduct) => ({
-                    name: cartProduct.Product.name,
+                    name: (cartProduct.Product as any)?.name,
                     quantity: cartProduct.quantity,
                     price: cartProduct.PriceList.unitprice.toFixed(2),
                     total: (
@@ -382,7 +382,12 @@ export class AppService {
      * @returns Rendered HTML string.
      */
     private renderTemplate(template: string, data: any): string {
-        const templatePath = join(__dirname, 'templates', `${template}.html`)
+        const templatePath = join(
+            resolve(__dirname),
+            '../',
+            'templates',
+            `${template}.html`,
+        )
         const templateSource = readFileSync(templatePath, 'utf8')
         const compiledTemplate = Handlebars.compile(templateSource)
         return compiledTemplate(data)

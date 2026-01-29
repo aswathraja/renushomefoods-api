@@ -7,15 +7,19 @@ import {
     Post,
     Query,
     Res,
+    UploadedFile,
+    UseInterceptors,
 } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 import type { Response } from 'express'
+import { existsSync, unlinkSync } from 'fs'
 import * as jwt from 'jsonwebtoken'
+import path from 'path'
 import * as sequelize from 'sequelize'
-import { sequelize as Sequelize } from './db'
+import { sequelize as Sequelize } from '../database/db'
 
 import { Op } from 'sequelize'
-import { AppService } from './app.service'
-import { logger } from './logger'
+import { logger } from '../logger/logger'
 import {
     Cart,
     CartProduct,
@@ -28,13 +32,16 @@ import {
     PriceList,
     Product,
     ProductImage,
+    Review,
+    ReviewProduct,
     Role,
     User,
     UserAddress,
     UserRole,
     UserSession,
-} from './models'
-import { decryptPayload, encryptPayload } from './utils'
+} from '../models/models'
+import { AppService } from '../services/app.service'
+import { decryptPayload, encryptPayload, saveFile } from '../utils/utils'
 
 @Controller('order')
 export class OrderController {
@@ -746,7 +753,6 @@ export class OrderController {
                     num.replace(/^\+\d{1,2}|\s+/g, '')
 
                 const normalizedPhone = normalizePhone(mobile)
-
                 const whereConditions: any = {
                     [Op.or]: [
                         { username: normalizedPhone },
@@ -815,14 +821,18 @@ export class OrderController {
 
             // Find or create user address
             let userAddress
-            if (userAddressId || user.toJSON().id) {
+            if (userAddressId && user.toJSON().id) {
                 userAddress = await UserAddress.findOne({
                     where: {
-                        [Op.or]: {
-                            id: userAddressId,
-                            userId: user.toJSON().id,
-                            isDefault: true,
-                        },
+                        [Op.or]: [
+                            { id: userAddressId },
+                            {
+                                [Op.and]: [
+                                    { userId: user.toJSON().id },
+                                    { isDefault: true },
+                                ],
+                            },
+                        ],
                     },
                 })
                 if (!userAddress) {
@@ -848,7 +858,6 @@ export class OrderController {
                     phone: phone || mobile,
                     isDefault: true,
                 })
-
                 userAddress = await UserAddress.findOne({
                     where: {
                         userId: user.toJSON().id,
@@ -937,21 +946,20 @@ export class OrderController {
                 (order.paymentMethod !== 'UPI' &&
                     order.toJSON().status === 'Ordered')
             ) {
-                // Send order invoice email to user
-                await this.appService.sendMail({
-                    to: user.toJSON().email,
-                    subject: "Your Order Invoice - Renu's Home Foods",
-                    template: 'order-invoice',
-                    data: orderInvoiceData,
-                })
-
-                // Send order invoice email to user
-                await this.appService.sendMail({
-                    to: process.env.SMTP_USER,
-                    subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
-                    template: 'order-invoice',
-                    data: orderInvoiceData,
-                })
+                // // Send order invoice email to user
+                // await this.appService.sendMail({
+                //     to: user.toJSON().email,
+                //     subject: "Your Order Invoice - Renu's Home Foods",
+                //     template: 'order-invoice',
+                //     data: orderInvoiceData,
+                // })
+                // // Send order invoice email to user
+                // await this.appService.sendMail({
+                //     to: process.env.SMTP_USER,
+                //     subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
+                //     template: 'order-invoice',
+                //     data: orderInvoiceData,
+                // })
             }
 
             const encryptedResponse = {
@@ -1766,7 +1774,6 @@ export class OrderController {
             // Generate PDF
             const pdfBuffer =
                 await this.appService.generateOrderInvoicePDF(orderId)
-
             // Set response headers
             res.setHeader('Content-Type', 'application/pdf')
             res.setHeader(
@@ -1992,6 +1999,528 @@ export class OrderController {
                 {
                     error: encryptPayload({
                         error: 'Failed to fetch coupons. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('save-review')
+    @UseInterceptors(FileInterceptor('photo'))
+    async saveOrUpdateReview(
+        @Body() body: any,
+        @UploadedFile() photo: Express.Multer.File,
+    ) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const {
+                id,
+                name,
+                phone,
+                userId,
+                review,
+                rating,
+                products,
+                highlight,
+            } = decryptedBody as {
+                id?: number
+                name: string
+                phone: string
+                userId?: number
+                review: string
+                rating: number
+                highlight: boolean
+                products?: number[]
+            }
+
+            // Validate mandatory fields
+            if (!name || !phone) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Name and Phone are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check if trying to set highlight to true
+            if (highlight === true) {
+                // Count existing highlighted reviews
+                const highlightedCount = await Review.count({
+                    where: { highlight: true },
+                })
+
+                // If updating an existing review that is already highlighted, don't count it
+                if (id) {
+                    const existingReview = await Review.findByPk(id)
+                    if (existingReview && existingReview.toJSON().highlight) {
+                        // This review is already highlighted, so it's counted in the total
+                        // We need to check if there are 10 OTHER highlighted reviews
+                        if (highlightedCount >= 11) {
+                            throw new HttpException(
+                                {
+                                    error: encryptPayload({
+                                        error: 'max number of highlighted reviews is 10',
+                                    }),
+                                },
+                                HttpStatus.BAD_REQUEST,
+                            )
+                        }
+                    } else {
+                        // This is a new highlight, check if we already have 10
+                        if (highlightedCount >= 10) {
+                            throw new HttpException(
+                                {
+                                    error: encryptPayload({
+                                        error: 'max number of highlighted reviews is 10',
+                                    }),
+                                },
+                                HttpStatus.BAD_REQUEST,
+                            )
+                        }
+                    }
+                } else {
+                    // Creating a new review
+                    if (highlightedCount >= 10) {
+                        throw new HttpException(
+                            {
+                                error: encryptPayload({
+                                    error: 'max number of highlighted reviews is 10',
+                                }),
+                            },
+                            HttpStatus.BAD_REQUEST,
+                        )
+                    }
+                }
+            }
+
+            let reviewRecord: Review
+            let photoPath: string | null = null
+
+            if (id) {
+                // Update existing review
+                reviewRecord = await Review.findByPk(id)
+                if (!reviewRecord) {
+                    throw new HttpException(
+                        {
+                            error: encryptPayload({
+                                error: 'Review not found.',
+                            }),
+                        },
+                        HttpStatus.NOT_FOUND,
+                    )
+                }
+
+                await reviewRecord.update({
+                    name,
+                    phone,
+                    userId: userId || null,
+                    review,
+                    rating,
+                    highlight,
+                    photo:
+                        photoPath !== null
+                            ? photoPath
+                            : reviewRecord.toJSON().photo,
+                })
+            } else {
+                // Create new review
+                reviewRecord = await Review.create({
+                    name,
+                    phone,
+                    userId: userId || null,
+                    review,
+                    rating,
+                    highlight: highlight ?? false,
+                    photo: null,
+                })
+                // Reload to get the updated instance
+                reviewRecord = await Review.findByPk(reviewRecord.id)
+            }
+            // Handle products (many-to-many relationship)
+            if (Array.isArray(products) && products.length > 0) {
+                // Remove existing product associations
+                await ReviewProduct.destroy({
+                    where: { reviewId: reviewRecord.toJSON().id },
+                })
+
+                // Create new product associations
+                const reviewProducts = products.map((productId) => ({
+                    reviewId: reviewRecord.toJSON().id,
+                    productId,
+                }))
+                await ReviewProduct.bulkCreate(reviewProducts)
+            }
+
+            // Handle photo upload if provided
+            if (photo) {
+                // Delete old photo if exists
+                const existingReview = reviewRecord.toJSON()
+                if (existingReview.photo) {
+                    try {
+                        const oldPhotoPath = path.join(
+                            process.env.STATIC_PATH || '',
+                            existingReview.photo,
+                        )
+                        if (existsSync(oldPhotoPath)) {
+                            unlinkSync(oldPhotoPath)
+                        }
+                    } catch (err) {
+                        logger.error(
+                            new Error(
+                                `Failed to delete old review photo: ${err.message}`,
+                            ),
+                        )
+                    }
+                }
+                // Save new photo with review ID prefix
+                photoPath = saveFile(
+                    photo,
+                    'reviews',
+                    id ?? reviewRecord.toJSON().id,
+                )
+                await reviewRecord.update({ photo: photoPath })
+            }
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    review: reviewRecord,
+                    message: id
+                        ? 'Review updated successfully.'
+                        : 'Review created successfully.',
+                }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            const cleanMessage =
+                'Error in saveOrUpdateReview: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to save or update review. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('get-reviews')
+    async getAllReviews(@Body() body: any) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const {
+                highlight,
+                products,
+                limit,
+                name,
+                fromDate,
+                toDate,
+                rating,
+            } = decryptedBody as {
+                highlight?: boolean
+                products?: number[]
+                limit?: number
+                name?: string
+                fromDate?: string
+                toDate?: string
+                rating?: number
+            }
+
+            // Build where clause based on highlight filter
+            const whereClause: any = {}
+
+            // If highlight is passed, filter by highlight value
+            // If highlight is NOT passed, default to showing only highlighted reviews (highlight = true)
+            if (highlight === true) {
+                whereClause.highlight = highlight
+            } else if (highlight === false) {
+                delete whereClause.highlight
+            } else {
+                whereClause.highlight = true
+            }
+
+            // Name filter - case insensitive contains search
+            if (name && name.trim()) {
+                whereClause[Op.and] = whereClause[Op.and] || []
+                whereClause[Op.and].push(
+                    sequelize.where(
+                        sequelize.fn('LOWER', sequelize.col('Review.name')),
+                        {
+                            [Op.like]: `%${name.toLowerCase().trim()}%`,
+                        },
+                    ),
+                )
+            }
+
+            // Date range filter - updatedAt between fromDate and toDate
+            if (fromDate || toDate) {
+                whereClause.updatedAt = {}
+                if (fromDate) {
+                    whereClause.updatedAt[Op.gte] = new Date(fromDate)
+                }
+                if (toDate) {
+                    // Set to end of day for toDate
+                    const toDateObj = new Date(toDate)
+                    toDateObj.setHours(23, 59, 59, 999)
+                    whereClause.updatedAt[Op.lte] = toDateObj
+                }
+            }
+
+            // Rating filter - rating >= N AND rating < N+1
+            if (rating !== undefined && rating !== null) {
+                whereClause.rating = {
+                    [Op.and]: [{ [Op.gte]: rating }, { [Op.lt]: rating + 1 }],
+                }
+            }
+
+            // Build the base review query
+            const reviewFindOptions: any = {
+                where: whereClause,
+                include: [
+                    {
+                        model: Product,
+                        as: 'products',
+                        through: { attributes: [] },
+                    },
+                ],
+                order: [['id', 'DESC']],
+                limit: limit || 100,
+            }
+
+            // If productids are passed, filter by product IDs via ReviewProduct junction table
+            if (Array.isArray(products) && products.length > 0) {
+                // Find reviews that have any of the specified products (OR condition)
+                const reviewProducts = await ReviewProduct.findAll({
+                    where: {
+                        productId: { [Op.in]: products },
+                    },
+                })
+
+                const reviewIds = [
+                    ...new Set(
+                        reviewProducts.map((rp) => rp.toJSON().reviewId),
+                    ),
+                ]
+
+                // Add review ID filter to the where clause
+                reviewFindOptions.where.id = { [Op.in]: reviewIds }
+            }
+
+            const reviews = await Review.findAll(reviewFindOptions)
+
+            const encryptedResponse = {
+                response: encryptPayload({ reviews }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            const cleanMessage =
+                'Error in getAllReviews: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to fetch reviews. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('get-reviews-by-product')
+    async getReviewsByProduct(@Body() body: any) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { productIds } = decryptedBody as {
+                productIds: number[]
+            }
+
+            if (!Array.isArray(productIds) || productIds.length === 0) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Product IDs array is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Find reviews that have any of the specified products (OR condition)
+            const reviewProducts = await ReviewProduct.findAll({
+                where: {
+                    productId: { [Op.in]: productIds },
+                },
+            })
+
+            const reviewIds = [
+                ...new Set(reviewProducts.map((rp) => rp.toJSON().reviewId)),
+            ]
+
+            const reviews = await Review.findAll({
+                where: {
+                    id: { [Op.in]: reviewIds },
+                },
+                include: [
+                    {
+                        model: Product,
+                        as: 'products',
+                        through: { attributes: [] },
+                    },
+                ],
+                order: [['id', 'DESC']],
+            })
+
+            const encryptedResponse = {
+                response: encryptPayload({ reviews }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            const cleanMessage =
+                'Error in getReviewsByProduct: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error:
+                            'Failed to fetch reviews by product. ' +
+                            errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('delete-review')
+    async deleteReview(@Body() body: any) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { ids } = decryptedBody as {
+                ids: number[]
+            }
+
+            if (!Array.isArray(ids) || ids.length === 0) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Review IDs array is required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Fetch reviews to get photo paths before deletion
+            const reviews = await Review.findAll({
+                where: { id: { [Op.in]: ids } },
+            })
+
+            // Delete photo files
+            for (const review of reviews) {
+                const reviewData = review.toJSON()
+                if (reviewData.photo) {
+                    try {
+                        const photoPath = path.join(
+                            process.env.STATIC_PATH || '',
+                            reviewData.photo,
+                        )
+                        if (existsSync(photoPath)) {
+                            unlinkSync(photoPath)
+                        }
+                    } catch (err) {
+                        logger.error(
+                            new Error(
+                                `Failed to delete review photo: ${err.message}`,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            // Delete review products (junction table records)
+            await ReviewProduct.destroy({
+                where: { reviewId: { [Op.in]: ids } },
+            })
+
+            // Delete reviews
+            await Review.destroy({
+                where: { id: { [Op.in]: ids } },
+            })
+
+            const encryptedResponse = {
+                response: encryptPayload({
+                    message: 'Reviews deleted successfully.',
+                    deletedCount: reviews.length,
+                }),
+            }
+            return encryptedResponse
+        } catch (error) {
+            const cleanMessage =
+                'Error in deleteReview: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to delete review. ' + errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

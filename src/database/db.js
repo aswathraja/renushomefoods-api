@@ -1,6 +1,6 @@
 const { sequelize } = require('./database');
-const { logger } = require('./logger');
-require('./models');
+const { logger } = require('../logger/logger');
+require('../models/models');
 
 async function connectToDatabase() {
   try {

@@ -13,7 +13,8 @@ import { existsSync, unlinkSync } from 'fs'
 import * as jwt from 'jsonwebtoken'
 import path from 'path'
 import { Op } from 'sequelize'
-import { logger } from './logger'
+import { sequelize } from '../database/db'
+import { logger } from '../logger/logger'
 import {
     Category,
     Item,
@@ -28,8 +29,8 @@ import {
     Role,
     User,
     UserSession,
-} from './models'
-import { decryptPayload, encryptPayload, saveFile } from './utils'
+} from '../models/models'
+import { decryptPayload, encryptPayload, saveFile } from '../utils/utils'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
@@ -75,18 +76,361 @@ export class InventoryController {
         }
     }
 
+    @Post('filters')
+    async getInventoryFilters(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const categoryIds = Array.isArray(decryptedBody?.categoryIds)
+                ? decryptedBody.categoryIds
+                : []
+            const itemIds = Array.isArray(decryptedBody?.itemIds)
+                ? decryptedBody.itemIds
+                : []
+            const locationIds = Array.isArray(decryptedBody?.locationIds)
+                ? decryptedBody.locationIds
+                : []
+
+            // Execute three separate SELECT statements with JSON array params; fallback to simple selects if not present
+            const replacements = {
+                categoryIds: categoryIds.length
+                    ? JSON.stringify(categoryIds)
+                    : null,
+                itemIds: itemIds.length ? JSON.stringify(itemIds) : null,
+                locationIds: locationIds.length
+                    ? JSON.stringify(locationIds)
+                    : null,
+            }
+
+            const sql1 = `
+                SELECT id, category AS name
+                FROM categories c
+            `
+            const result1: any = await sequelize.query(sql1, { replacements })
+
+            const sql2 = `
+                SELECT id, name
+                FROM (
+                  SELECT id, name, 'item' as type, categoryId AS category
+                  FROM items i
+                  WHERE (:itemIds IS NULL OR JSON_LENGTH(:itemIds) = 0 OR JSON_CONTAINS(:itemIds, CAST(i.id AS JSON)))
+                    AND (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(i.categoryId AS JSON)))
+                  UNION ALL
+                  SELECT id, name, 'product' as type, categoryid AS category
+                  FROM products p
+                  WHERE (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(p.categoryid AS JSON)))
+                ) AS combined
+                ORDER BY name ASC;
+            `
+            const result2: any = await sequelize.query(sql2, { replacements })
+
+            const sql3 = `
+                SELECT id, name
+                FROM locations l
+                ORDER BY name ASC;
+            `
+            const result3: any = await sequelize.query(sql3, { replacements })
+            // Handle three separate result sets
+            const categories = result1[0] || []
+            const items = result2[0] || []
+            const locations = result3[0] || []
+            return {
+                response: encryptPayload({
+                    categories,
+                    items,
+                    locations,
+                }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getInventoryFilters: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            return {
+                error: encryptPayload({
+                    error: 'Failed to fetch inventory filters',
+                }),
+            }
+        }
+    }
+
+    @Post('kpis')
+    async getInventoryKPIs(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const categoryIds = Array.isArray(decryptedBody?.categoryIds)
+                ? decryptedBody.categoryIds
+                : []
+            const itemIds = Array.isArray(decryptedBody?.itemIds)
+                ? decryptedBody.itemIds
+                : []
+            const locationIds = Array.isArray(decryptedBody?.locationIds)
+                ? decryptedBody.locationIds
+                : []
+
+            // Call stored procedure that returns a single row with KPI columns; pass JSON arrays (or null)
+            const fromDate = decryptedBody?.fromDate || null
+            const toDate = decryptedBody?.toDate || null
+            const results: any = await sequelize.query(
+                'CALL getInventoryKPIs(:categoryIds, :itemIds, :locationIds, :fromDate, :toDate)',
+                {
+                    replacements: {
+                        categoryIds: categoryIds.length
+                            ? JSON.stringify(categoryIds)
+                            : null,
+                        itemIds: itemIds.length
+                            ? JSON.stringify(itemIds)
+                            : null,
+                        locationIds: locationIds.length
+                            ? JSON.stringify(locationIds)
+                            : null,
+                        fromDate,
+                        toDate,
+                    },
+                },
+            )
+
+            // MySQL CALL returns either an array (first element is rows) or rows directly
+            let row = null
+            if (Array.isArray(results) && results.length > 0) {
+                row = results[0]
+            } else if (results && typeof results === 'object') {
+                row = results
+            }
+
+            // If stored procedure not available (row == null), compute directly
+            if (!row) {
+                // total items = items + products
+                // total items respecting date filters (item invoices / pricelists)
+                const [totalItemsRows]: any = await sequelize.query(
+                    `SELECT
+                      (SELECT COUNT(DISTINCT i.id)
+                       FROM items i
+                       WHERE (:itemIds IS NULL OR JSON_LENGTH(:itemIds) = 0 OR JSON_CONTAINS(:itemIds, CAST(i.id AS JSON)))
+                         AND (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(i.categoryId AS JSON)))
+                         AND (:fromDate IS NULL OR EXISTS (SELECT 1 FROM iteminvoices ii WHERE ii.itemId = i.id AND ii.updatedAt >= :fromDate AND (:toDate IS NULL OR ii.updatedAt <= :toDate)))
+                      )
+                      +
+                      (SELECT COUNT(DISTINCT p.id)
+                       FROM products p
+                       WHERE (:itemIds IS NULL OR JSON_LENGTH(:itemIds) = 0 OR JSON_CONTAINS(:itemIds, CAST(p.id AS JSON)))
+                         AND (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(p.categoryid AS JSON)))
+                         AND (:fromDate IS NULL OR EXISTS (SELECT 1 FROM pricelists pr WHERE pr.productId = p.id AND pr.updatedAt >= :fromDate AND (:toDate IS NULL OR pr.updatedAt <= :toDate)))
+                      ) AS totalItems`,
+                    {
+                        replacements: {
+                            categoryIds: categoryIds.length
+                                ? JSON.stringify(categoryIds)
+                                : null,
+                            itemIds: itemIds.length
+                                ? JSON.stringify(itemIds)
+                                : null,
+                            fromDate,
+                            toDate,
+                        },
+                    },
+                )
+                const totalItems = Number(totalItemsRows?.[0]?.totalItems || 0)
+
+                const totalCategories = await Category.count({
+                    where: categoryIds.length
+                        ? { id: { [Op.in]: categoryIds } }
+                        : undefined,
+                })
+
+                const [itemRows]: any = await sequelize.query(
+                    `SELECT COALESCE(SUM(il.quantity),0) as itemStock
+                     FROM itemlocations il
+                     JOIN items i ON i.id = il.itemId
+                     WHERE (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(i.categoryId AS JSON)))
+                       AND (:itemIds IS NULL OR JSON_LENGTH(:itemIds) = 0 OR JSON_CONTAINS(:itemIds, CAST(i.id AS JSON)))
+                       AND (:locationIds IS NULL OR JSON_LENGTH(:locationIds) = 0 OR JSON_CONTAINS(:locationIds, CAST(il.locationId AS JSON)))
+                       AND (:fromDate IS NULL OR EXISTS (SELECT 1 FROM iteminvoices ii WHERE ii.itemId = i.id AND ii.updatedAt >= :fromDate AND (:toDate IS NULL OR ii.updatedAt <= :toDate))))`,
+                    {
+                        replacements: {
+                            categoryIds: categoryIds.length
+                                ? JSON.stringify(categoryIds)
+                                : null,
+                            itemIds: itemIds.length
+                                ? JSON.stringify(itemIds)
+                                : null,
+                            locationIds: locationIds.length
+                                ? JSON.stringify(locationIds)
+                                : null,
+                            fromDate,
+                            toDate,
+                        },
+                    },
+                )
+                const [productRows]: any = await sequelize.query(
+                    `SELECT COALESCE(SUM(pl.quantity),0) as productStock
+                     FROM productlocations pl
+                     JOIN products p ON p.id = pl.productId
+                     WHERE (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(p.categoryid AS JSON)))
+                       AND (:itemIds IS NULL OR JSON_LENGTH(:itemIds) = 0 OR JSON_CONTAINS(:itemIds, CAST(p.id AS JSON)))
+                       AND (:locationIds IS NULL OR JSON_LENGTH(:locationIds) = 0 OR JSON_CONTAINS(:locationIds, CAST(pl.locationId AS JSON)))`,
+                    {
+                        replacements: {
+                            categoryIds: categoryIds.length
+                                ? JSON.stringify(categoryIds)
+                                : null,
+                            itemIds: itemIds.length
+                                ? JSON.stringify(itemIds)
+                                : null,
+                            locationIds: locationIds.length
+                                ? JSON.stringify(locationIds)
+                                : null,
+                        },
+                    },
+                )
+                const itemStock = itemRows?.itemStock || 0
+                const productStock = productRows?.productStock || 0
+
+                // pending/fulfilled for products from cartproducts -> carts -> orders
+                const [prodPendingFulfilled]: any = await sequelize.query(
+                    `SELECT COALESCE(SUM(CASE WHEN o.status = 'Delivered' THEN cp.quantity ELSE 0 END),0) AS fulfilled,
+                            COALESCE(SUM(CASE WHEN o.status IS NULL OR o.status <> 'Delivered' THEN cp.quantity ELSE 0 END),0) AS pending
+                     FROM cartproducts cp
+                     JOIN carts c ON cp.cartId = c.id
+                     LEFT JOIN orders o ON o.cartId = c.id
+                     JOIN products p ON p.id = cp.productId
+                     WHERE (:categoryIds IS NULL OR JSON_LENGTH(:categoryIds) = 0 OR JSON_CONTAINS(:categoryIds, CAST(p.categoryid AS JSON)))
+                       AND (:itemIds IS NULL OR JSON_LENGTH(:itemIds) = 0 OR JSON_CONTAINS(:itemIds, CAST(p.id AS JSON)))
+                       AND (:fromDate IS NULL OR EXISTS (SELECT 1 FROM pricelists pr2 WHERE pr2.productId = p.id AND pr2.updatedAt >= :fromDate AND (:toDate IS NULL OR pr2.updatedAt <= :toDate))))`,
+                    {
+                        replacements: {
+                            categoryIds: categoryIds.length
+                                ? JSON.stringify(categoryIds)
+                                : null,
+                            itemIds: itemIds.length
+                                ? JSON.stringify(itemIds)
+                                : null,
+                            fromDate,
+                            toDate,
+                        },
+                    },
+                )
+
+                row = {
+                    totalItems,
+                    totalCategories,
+                    availableStock:
+                        Number(itemStock || 0) + Number(productStock || 0),
+                    pendingQuantity: Number(prodPendingFulfilled?.pending || 0),
+                    fulfilledQuantity: Number(
+                        prodPendingFulfilled?.fulfilled || 0,
+                    ),
+                }
+            }
+
+            return { response: encryptPayload(row) }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getInventoryKPIs: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            return {
+                error: encryptPayload({
+                    error: 'Failed to fetch inventory KPIs',
+                }),
+            }
+        }
+    }
+
+    @Post('chart-data')
+    async getInventoryChartData(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const categoryIds = Array.isArray(decryptedBody?.categoryIds)
+                ? decryptedBody.categoryIds
+                : []
+            const itemIds = Array.isArray(decryptedBody?.itemIds)
+                ? decryptedBody.itemIds
+                : []
+            const locationIds = Array.isArray(decryptedBody?.locationIds)
+                ? decryptedBody.locationIds
+                : []
+
+            const fromDate = decryptedBody?.fromDate || null
+            const toDate = decryptedBody?.toDate || null
+            const types = ['byCategory', 'byLocation', 'byItem', 'topItems']
+            const chartData: any = {}
+
+            for (const type of types) {
+                const results: any = await sequelize.query(
+                    'CALL getInventoryChartData(:type, :categoryIds, :itemIds, :locationIds, :fromDate, :toDate)',
+                    {
+                        replacements: {
+                            type,
+                            categoryIds: categoryIds.length
+                                ? JSON.stringify(categoryIds)
+                                : null,
+                            itemIds: itemIds.length
+                                ? JSON.stringify(itemIds)
+                                : null,
+                            locationIds: locationIds.length
+                                ? JSON.stringify(locationIds)
+                                : null,
+                            fromDate,
+                            toDate,
+                        },
+                    },
+                )
+
+                // For CALL, results may be an array of rows; normalize
+                if (Array.isArray(results) && results.length > 0) {
+                    chartData[type] = results
+                } else {
+                    chartData[type] = []
+                }
+            }
+
+            return { response: encryptPayload(chartData) }
+        } catch (error) {
+            const cleanMessage =
+                'Error in getInventoryChartData: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            return {
+                error: encryptPayload({
+                    error: 'Failed to fetch inventory chart data',
+                }),
+            }
+        }
+    }
+
     @Post('get-categories')
     async getCategories(@Body() body: { request?: string }) {
         try {
+            console.log('body', body)
             const decryptedBody = decryptPayload(body.request)
+            console.log('decryptedBody', decryptedBody)
             const whereClause: any = {}
-            if (decryptedBody?.type) {
-                whereClause.type = decryptedBody.type
-            }
-            if (decryptedBody?.category) {
-                whereClause.category = {
-                    [Op.like]: `%${decryptedBody.category}%`,
-                }
+            if (decryptedBody?.type) whereClause.type = decryptedBody.type
+            if (
+                decryptedBody?.category &&
+                decryptedBody?.category !== 'All Products' &&
+                Boolean(decryptedBody?.category) === true
+            ) {
+                // match exact category name
+                whereClause.category = decryptedBody.category
             }
             if (decryptedBody?.description) {
                 whereClause.description = {
@@ -97,12 +441,11 @@ export class InventoryController {
                 decryptedBody?.image !== undefined &&
                 decryptedBody?.image !== null
             ) {
-                if (decryptedBody.image === true) {
+                if (decryptedBody.image === true)
                     whereClause.image = { [Op.ne]: null }
-                } else if (decryptedBody.image === false) {
-                    whereClause.image = null
-                }
+                else if (decryptedBody.image === false) whereClause.image = null
             }
+
             const categories = await Category.findAll({
                 where: whereClause,
                 order: [['rank', 'ASC']],
@@ -116,9 +459,9 @@ export class InventoryController {
                     error.message ||
                     'Unknown error')
             const err = new Error(cleanMessage)
-            err.stack = error.stack // keep original stack
+            err.stack = error.stack
 
-            logger.error(err) // Winston now logs message + stack
+            logger.error(err)
             return {
                 error: encryptPayload({ error: 'Failed to fetch categories' }),
             }

@@ -10,16 +10,23 @@ import {
 } from '@nestjs/common'
 import * as jwt from 'jsonwebtoken'
 import { Op, Sequelize, UniqueConstraintError } from 'sequelize'
-import { AppService } from './app.service'
-import { sequelize } from './db'
-import { logger } from './logger'
-import { Order, Role, User, UserAddress, UserRole, UserSession } from './models'
+import { sequelize } from '../database/db'
+import { logger } from '../logger/logger'
+import {
+    Order,
+    Role,
+    User,
+    UserAddress,
+    UserRole,
+    UserSession,
+} from '../models/models'
+import { AppService } from '../services/app.service'
 import {
     comparePassword,
     decryptPayload,
     encryptPayload,
     hashPassword,
-} from './utils'
+} from '../utils/utils'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 

@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common'
 import { join } from 'path'
-import { AppService } from './app.service'
-import { logger } from './logger'
-import { Message } from './models'
-import { decryptPayload, encryptPayload } from './utils'
+import { sequelize } from '../database/database'
+import { logger } from '../logger/logger'
+import { Message } from '../models/models'
+import { AppService } from '../services/app.service'
+import { decryptPayload, encryptPayload } from '../utils/utils'
 
 @Controller()
 export class AppController {
@@ -13,6 +14,56 @@ export class AppController {
     getHello(@Body() body: any, @Query() query: any, @Res() res): any {
         // Serve the React build index.html file
         res.sendFile(join(__dirname, 'web', 'index.html'))
+    }
+
+    @Get('status')
+    async getStatus(): Promise<{
+        status: string
+        checks: Record<string, any>
+    }> {
+        const checks: Record<string, any> = {}
+        let allHealthy = true
+
+        // Check required environment variables
+        const requiredEnvVars = [
+            'DB_NAME',
+            'DB_USERNAME',
+            'DB_PASSWORD',
+            'DB_HOST',
+            'SMTP_USER',
+        ]
+
+        for (const envVar of requiredEnvVars) {
+            const value = process.env[envVar]
+            const isSet = value !== undefined && value !== ''
+            checks[envVar] = {
+                required: true,
+                set: isSet,
+                value: isSet ? '***' : 'NOT SET',
+            }
+            if (!isSet) allHealthy = false
+        }
+
+        // Check database connectivity
+        try {
+            await sequelize.authenticate()
+            checks.database = {
+                status: 'connected',
+                healthy: true,
+            }
+        } catch (error) {
+            checks.database = {
+                status: 'disconnected',
+                healthy: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+            }
+            allHealthy = false
+        }
+
+        return {
+            status: allHealthy ? 'healthy' : 'unhealthy',
+            checks,
+        }
     }
 
     @Post('message')

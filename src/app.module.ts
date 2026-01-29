@@ -1,11 +1,11 @@
 import { Module, OnModuleInit } from '@nestjs/common'
-import { AdminController } from './admin.controller'
-import { AppController } from './app.controller'
-import { AppService } from './app.service'
-import { connectToDatabase } from './db'
-import { InventoryController } from './inventory.controller'
-import { OrderController } from './order.controller'
-import { UserController } from './user.controller'
+import { AdminController } from './controllers/admin.controller'
+import { AppController } from './controllers/app.controller'
+import { InventoryController } from './controllers/inventory.controller'
+import { OrderController } from './controllers/order.controller'
+import { UserController } from './controllers/user.controller'
+import { connectToDatabase } from './database/db'
+import { AppService } from './services/app.service'
 
 @Module({
     imports: [

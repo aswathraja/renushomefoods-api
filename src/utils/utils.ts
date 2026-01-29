@@ -4,7 +4,7 @@ import { AES, SHA256, Utf8 } from 'crypto-es'
 import * as dotenv from 'dotenv'
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs'
 import path, { resolve } from 'path'
-import { logger } from './logger'
+import { logger } from '../logger/logger'
 dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
 // Use a strong secret key (store securely, never hardcode in production)
@@ -41,6 +41,7 @@ export function comparePassword(password: string, hash: string): boolean {
 export const saveFile = (
     uploadedFile: Express.Multer.File,
     type: string,
+    reviewId?: number,
 ): string => {
     if (!uploadedFile) return null
 
@@ -59,6 +60,9 @@ export const saveFile = (
         else if (type === 'item') returnPrefix = '/items/'
         else if (type === 'location') returnPrefix = '/locations/'
         else if (type === 'inventory') returnPrefix = '/inventory/'
+    } else if (type === 'reviews') {
+        basePath = adsPath
+        returnPrefix = '/reviews/'
     } else {
         throw new Error('Invalid type')
     }
@@ -67,7 +71,15 @@ export const saveFile = (
         mkdirSync(path.join(basePath, returnPrefix), { recursive: true })
     }
 
-    const fileName = uploadedFile.originalname
+    let fileName = uploadedFile.originalname
+
+    // For review photos, prepend the review ID to the filename
+    if (type === 'reviews' && reviewId) {
+        const extension = path.extname(fileName)
+        const baseName = path.basename(fileName, extension)
+        fileName = `${reviewId}-${baseName}${extension}`
+    }
+
     const filePath = path.join(basePath, returnPrefix, fileName)
     writeFileSync(filePath, uploadedFile.buffer)
     return returnPrefix + fileName

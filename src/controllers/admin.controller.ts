@@ -6,15 +6,17 @@ import {
     HttpException,
     HttpStatus,
     Post,
+    Res,
     UploadedFile,
     UseInterceptors,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
+import ExcelJS from 'exceljs'
+import type { Response } from 'express'
 import * as jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
-import { AppService } from './app.service'
-import { sequelize } from './db'
-import { logger } from './logger'
+import { sequelize } from '../database/db'
+import { logger } from '../logger/logger'
 import {
     AdCampaign,
     AdCampaignUsers,
@@ -33,14 +35,15 @@ import {
     UserAddress,
     UserRole,
     UserSession,
-} from './models'
+} from '../models/models'
+import { AppService } from '../services/app.service'
 import {
     decryptPayload,
     deleteFileIfExists,
     encryptPayload,
     hashPassword,
     saveFile,
-} from './utils'
+} from '../utils/utils'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
@@ -66,7 +69,7 @@ export class AdminController {
         try {
             // Verify JWT token validity
             jwt.verify(token, JWT_SECRET)
-        } catch (err) {
+        } catch {
             throw new HttpException(
                 {
                     error: encryptPayload({
@@ -1108,6 +1111,7 @@ export class AdminController {
                     categoryName: row.categoryName,
                     productTotal: row.productTotal,
                     priceListId: row.priceListId,
+                    productId: row.productId,
                     productDiscount: row.productDiscount,
                 })
             })
@@ -1376,62 +1380,8 @@ export class AdminController {
         }
     }
 
-    @Post('user-address')
-    async getUserAddress(
-        @Body() body: { request: string },
-        @Headers() headers: Record<string, string>,
-    ) {
-        try {
-            // Authenticate admin
-            const authHeader = headers['authorization'] || ''
-            await this.authenticateAdmin(authHeader)
-
-            const { userId } = decryptPayload(body.request)
-            const addresses = await UserAddress.findAll({
-                where: { userId },
-                attributes: [
-                    'id',
-                    'name',
-                    'addressLine1',
-                    'city',
-                    'state',
-                    'country',
-                    'pincode',
-                    'phone',
-                ],
-            })
-            return {
-                response: encryptPayload({ addresses }),
-            }
-        } catch (error) {
-            const cleanMessage =
-                'Error in getUserAddress: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
-            const err = new Error(cleanMessage)
-            err.stack = error.stack // keep original stack
-
-            logger.error(err) // Winston now logs message + stack
-            if (error instanceof HttpException) {
-                throw error
-            }
-            const errorMessage =
-                error instanceof Error ? error.message : 'Unknown error'
-            throw new HttpException(
-                {
-                    error: encryptPayload({
-                        error: 'Failed to fetch user address. ' + errorMessage,
-                    }),
-                },
-                HttpStatus.INTERNAL_SERVER_ERROR,
-            )
-        }
-    }
-
-    @Post('create-or-update-order')
-    async createOrUpdateOrder(
+    @Post('save-order')
+    async saveOrder(
         @Body() body: { request: string },
         @Headers() headers: Record<string, string>,
     ) {
@@ -1466,6 +1416,7 @@ export class AdminController {
                 paymentMethod,
                 couponId,
             } = decryptedBody
+
             // Step 1: Check if user exists by customerPhone, if not create user
             let user = await User.findOne({
                 where: { phone: customerPhone },
@@ -1631,7 +1582,7 @@ export class AdminController {
             for (const existing of existingCartProducts) {
                 if (
                     productIdsInRequest.indexOf(
-                        existing.toJSON().Product.name,
+                        (existing.toJSON().Product as any)?.name,
                     ) === -1
                 ) {
                     await existing.destroy()
@@ -1691,7 +1642,7 @@ export class AdminController {
                         })
                     }
                 } else {
-                    await existingOrderCoupon.update({
+                    await existingOrderCoupon?.update({
                         couponCodeId: null,
                     })
                 }
@@ -1745,11 +1696,12 @@ export class AdminController {
                 // Send order invoice email to user
                 await this.appService.sendMail({
                     to: user.toJSON().email,
-                    subject: isNewOrder
-                        ? "Your Order Invoice - Renu's Home Foods"
-                        : isProductsModified
-                          ? "Your Updated Order Invoice - Renu's Home Foods"
-                          : '',
+                    subject:
+                        isNewOrder === true
+                            ? "Your Order Invoice - Renu's Home Foods"
+                            : isProductsModified === true
+                              ? "Your Updated Order Invoice - Renu's Home Foods"
+                              : '',
                     template: 'order-invoice',
                     data: orderInvoiceData,
                 })
@@ -2164,7 +2116,7 @@ export class AdminController {
                 // Save password only if provided (could be empty string or non-empty)
                 const passwordToSave =
                     user.hasOwnProperty('password') &&
-                    user.password !== undefined
+                    Boolean(user?.password) === true
                         ? hashPassword(user.password)
                         : userInstance.toJSON().password
                 await userInstance.update(
@@ -2282,7 +2234,10 @@ export class AdminController {
                 })
             }
             // Handle resetPassword boolean if true, generate OTP and send email
-            if (user.resetPassword === true) {
+            if (
+                user.resetPassword === true &&
+                Boolean(user?.password) === false
+            ) {
                 const otp = this.appService.generateRandomNumber(4)
                 await userInstance.update({ otp }, { transaction })
                 await this.appService.sendMail({
@@ -2293,7 +2248,7 @@ export class AdminController {
                     data: {
                         logo: 'https://renushomefoods.com/static/logo.png',
                         userFullName: userInstance.toJSON().name,
-                        message: `Your OTP to reset your password for your account with <b>${user.toJSON().email}</b> and phone number <b>${user.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
+                        message: `Your OTP to reset your password for your account with <b>${userInstance.toJSON().email}</b> and phone number <b>${userInstance.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
                         year: new Date().getFullYear().toString(),
                     },
                 })
@@ -2558,6 +2513,430 @@ export class AdminController {
                         error:
                             'Failed to send ad campaign emails. ' +
                             errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('export-data')
+    async exportExcelData(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+        @Res() res: Response,
+    ) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Decrypt request to extract filters
+            const filters = decryptPayload(body.request)
+            const {
+                fromDate,
+                toDate,
+                orderStatus,
+                category,
+                product,
+                name,
+                phone,
+            } = filters
+
+            // Adjust dates to be timezone agnostic and filter by date only
+            let adjustedFromDate = fromDate
+            let adjustedToDate = toDate
+            if (fromDate) {
+                adjustedFromDate = new Date(fromDate + 'T00:00:00.000Z')
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' ')
+            }
+            if (toDate) {
+                adjustedToDate = new Date(toDate + 'T23:59:59.999Z')
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' ')
+            }
+
+            // Call fetch-orders API internally
+            const ordersResults = await sequelize.query(
+                'CALL GetOrders(:fromDate, :toDate, :orderStatus, :category, :product, :name, :phone)',
+                {
+                    replacements: {
+                        fromDate: adjustedFromDate || null,
+                        toDate: adjustedToDate || null,
+                        orderStatus: orderStatus || null,
+                        category: category || null,
+                        product: product || null,
+                        name: name || null,
+                        phone: phone || null,
+                    },
+                },
+            )
+
+            // Process orders data similar to fetchOrders method
+            const ordersMap: { [key: number]: any } = {}
+            ;(ordersResults as any[]).forEach((row: any) => {
+                const orderId = row.orderId
+                if (!ordersMap[orderId]) {
+                    ordersMap[orderId] = {
+                        orderId: row.orderId,
+                        userId: row.userId,
+                        userAddressId: row.userAddressId,
+                        cartId: row.cartId,
+                        orderDate: row.orderDate,
+                        orderStatus: row.orderStatus,
+                        shippingMethod: row.shippingMethod,
+                        paymentMethod: row.paymentMethod,
+                        expectedDeliveryDate: row.expectedDeliveryDate,
+                        deliveryName: row.deliveryName,
+                        addressLine1: row.addressLine1,
+                        city: row.city,
+                        state: row.state,
+                        country: row.country,
+                        pincode: row.pincode,
+                        deliveryPhone: row.deliveryPhone,
+                        customerName: row.customerName,
+                        customerPhone: row.customerPhone,
+                        customerEmail: row.customerEmail,
+                        notes: row.notes,
+                        deliveryNote: row.deliveryNote,
+                        products: [],
+                        shippingDiscount: row.shippingDiscount,
+                        couponCode: row.couponCode,
+                        productDiscount: row.productDiscount,
+                    }
+                }
+                ordersMap[orderId].products.push({
+                    quantity: row.quantity,
+                    productName: row.productName,
+                    price: row.price,
+                    categoryName: row.categoryName,
+                    productTotal: row.productTotal,
+                    priceListId: row.priceListId,
+                    productDiscount: row.productDiscount,
+                })
+            })
+            const orders = Object.values(ordersMap)
+
+            // Calculate orderTotal for each order
+            orders.forEach((order: any) => {
+                const orderTotal = order.products.reduce(
+                    (sum: number, product: any) =>
+                        sum + (product?.productTotal || 0),
+                    0,
+                )
+                const productDiscount = order.products.reduce(
+                    (sum: number, product: any) =>
+                        sum + (product?.productDiscount || 0),
+                    0,
+                )
+                order.orderTotal = orderTotal
+                order.productDiscount = productDiscount
+            })
+
+            // Call chart-data API internally for each chart type
+            const chartTypes = [
+                'Total Sales by Category',
+                'Total Sales by Product',
+                'Total Sales by Order Status',
+                'Products with Quantities by Order Status',
+            ]
+            const chartTypeKeyMap = {}
+
+            const chartData: any = {}
+
+            // Call stored procedure for each chart type
+            for (const chartType of chartTypes) {
+                const results = await sequelize.query(
+                    'CALL getChartData(:fromDate, :toDate, :orderStatus, :category, :product, :name, :phone, :chartType)',
+                    {
+                        replacements: {
+                            fromDate: adjustedFromDate || null,
+                            toDate: adjustedToDate || null,
+                            orderStatus: orderStatus || null,
+                            category: category || null,
+                            product: product || null,
+                            name: name || null,
+                            phone: phone || null,
+                            chartType,
+                        },
+                    },
+                )
+
+                let processedResults: any = results
+
+                // Special processing for 'Products with Quantities by Order Status'
+                if (chartType === 'Products with Quantities by Order Status') {
+                    const productMap: {
+                        [key: string]: {
+                            pendingQuantity: number
+                            fulfilledQuantity: number
+                        }
+                    } = {}
+                    ;(results as any[]).forEach((row: any) => {
+                        const product =
+                            row.product ||
+                            row.Product ||
+                            row.productName ||
+                            row.ProductName
+
+                        if (!productMap[product]) {
+                            productMap[product] = {
+                                pendingQuantity: 0,
+                                fulfilledQuantity: 0,
+                            }
+                        }
+
+                        productMap[product].pendingQuantity +=
+                            Number(row.pendingQuantity) ?? 0
+                        productMap[product].fulfilledQuantity +=
+                            Number(row.fulfilledQuantity) ?? 0
+                    })
+
+                    processedResults = Object.entries(productMap).map(
+                        ([product, quantities]) => ({
+                            product,
+                            pendingQuantity: quantities.pendingQuantity,
+                            fulfilledQuantity: quantities.fulfilledQuantity,
+                        }),
+                    )
+                }
+
+                // Map chart type to key in response
+                const key = chartType
+                    .toLowerCase()
+                    .replace(/\s+/g, '')
+                    .replace(/[^a-zA-Z0-9]/g, '')
+                chartData[key] = processedResults
+                chartTypeKeyMap[key] = chartType
+            }
+
+            // Create Excel workbook
+            const workbook = new ExcelJS.Workbook()
+            workbook.creator = 'Renu Home Foods Admin'
+            workbook.created = new Date()
+
+            // Create Orders sheet
+            const ordersSheet = workbook.addWorksheet('Orders')
+
+            // Define orders sheet columns
+            ordersSheet.columns = [
+                { header: 'Order ID', key: 'orderId', width: 10 },
+                { header: 'Order Date', key: 'orderDate', width: 20 },
+                { header: 'Order Status', key: 'orderStatus', width: 15 },
+                { header: 'Customer Name', key: 'customerName', width: 20 },
+                { header: 'Customer Phone', key: 'customerPhone', width: 15 },
+                { header: 'Customer Email', key: 'customerEmail', width: 25 },
+                {
+                    header: 'Delivery Address',
+                    key: 'deliveryAddress',
+                    width: 30,
+                },
+                { header: 'City', key: 'city', width: 15 },
+                { header: 'State', key: 'state', width: 15 },
+                { header: 'Pincode', key: 'pincode', width: 10 },
+                { header: 'Payment Method', key: 'paymentMethod', width: 15 },
+                { header: 'Shipping Method', key: 'shippingMethod', width: 15 },
+                {
+                    header: 'Expected Delivery',
+                    key: 'expectedDeliveryDate',
+                    width: 20,
+                },
+                { header: 'Products', key: 'products', width: 40 },
+                { header: 'Order Total', key: 'orderTotal', width: 12 },
+                {
+                    header: 'Product Discount',
+                    key: 'productDiscount',
+                    width: 15,
+                },
+                {
+                    header: 'Shipping Discount',
+                    key: 'shippingDiscount',
+                    width: 15,
+                },
+                { header: 'Coupon Code', key: 'couponCode', width: 15 },
+                { header: 'Notes', key: 'notes', width: 30 },
+            ]
+
+            // Style the header row
+            ordersSheet.getRow(1).font = { bold: true }
+            ordersSheet.getRow(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' },
+            }
+
+            // Add orders data
+            orders.forEach((order: any) => {
+                const productsText = order.products
+                    .map(
+                        (p: any) =>
+                            `${p.productName} (${p.quantity}x ₹${p.price})`,
+                    )
+                    .join(', ')
+
+                const deliveryAddress = `${order.deliveryName}, ${order.addressLine1}`
+
+                ordersSheet.addRow({
+                    orderId: order.orderId,
+                    orderDate: new Date(order.orderDate).toLocaleDateString(),
+                    orderStatus: order.orderStatus,
+                    customerName: order.customerName,
+                    customerPhone: order.customerPhone,
+                    customerEmail: order.customerEmail,
+                    deliveryAddress: deliveryAddress,
+                    city: order.city,
+                    state: order.state,
+                    pincode: order.pincode,
+                    paymentMethod: order.paymentMethod,
+                    shippingMethod: order.shippingMethod,
+                    expectedDeliveryDate: new Date(
+                        order.expectedDeliveryDate,
+                    ).toLocaleDateString(),
+                    products: productsText,
+                    orderTotal: `₹${order.orderTotal.toFixed(2)}`,
+                    productDiscount: `₹${order.productDiscount.toFixed(2)}`,
+                    shippingDiscount: `₹${(order.shippingDiscount || 0).toFixed(2)}`,
+                    couponCode: order.couponCode || '',
+                    notes: order.notes || '',
+                })
+            })
+
+            // Create Chart Data sheet
+            const chartSheet = workbook.addWorksheet('Chart Data')
+
+            // Define chart data columns
+            chartSheet.columns = [
+                { header: 'Chart Type', key: 'chartType', width: 40 },
+                { header: 'Category/Product', key: 'category', width: 25 },
+                { header: 'Total Sales', key: 'value', width: 25 },
+                { header: 'Percentage', key: 'percentage', width: 30 },
+            ]
+
+            // Style the header row
+            chartSheet.getRow(1).font = { bold: true }
+            chartSheet.getRow(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE0E0E0' },
+            }
+
+            // Add chart data
+            Object.entries(chartData).forEach(
+                ([chartKey, chartValues]: [string, any]) => {
+                    if (Array.isArray(chartValues)) {
+                        const totalChartValue = chartValues.reduce(
+                            (total: number, item: any) => {
+                                if (item.totalSales) {
+                                    return total + Number(item.totalSales)
+                                }
+                                return total
+                            },
+                            0,
+                        )
+                        chartValues.forEach((value: any) => {
+                            if (
+                                chartKey ===
+                                'productswithquantitiesbyorderstatus'
+                            ) {
+                                const totalQuantity =
+                                    value.pendingQuantity +
+                                    value.fulfilledQuantity
+                                const pendingPercent =
+                                    (value.pendingQuantity / totalQuantity) *
+                                    100
+                                const fulfilledPercent =
+                                    (value.fulfilledQuantity / totalQuantity) *
+                                    100
+                                const percentage =
+                                    pendingPercent.toFixed(2) +
+                                    '% Pending, ' +
+                                    fulfilledPercent.toFixed(2) +
+                                    '% Fulfilled'
+                                chartSheet.addRow({
+                                    chartType: chartTypeKeyMap[chartKey],
+                                    category: value.product,
+                                    value: `Pending: ${value.pendingQuantity}, Fulfilled: ${value.fulfilledQuantity}`,
+                                    percentage: percentage,
+                                })
+                            } else {
+                                // For other chart types, determine the structure
+                                const category =
+                                    value.category ||
+                                    value.product ||
+                                    value.name ||
+                                    value.orderStatus
+                                const chartValue =
+                                    value.totalSales ||
+                                    value.quantity ||
+                                    value.count ||
+                                    0
+                                chartSheet.addRow({
+                                    chartType: chartTypeKeyMap[chartKey],
+                                    category: category,
+                                    value:
+                                        typeof chartValue === 'number'
+                                            ? '₹' + chartValue.toFixed(2)
+                                            : chartValue,
+                                    percentage:
+                                        chartValue && totalChartValue
+                                            ? (
+                                                  (chartValue /
+                                                      totalChartValue) *
+                                                  100
+                                              ).toFixed(2) + '%'
+                                            : 0 + '%',
+                                })
+                            }
+                        })
+                    }
+                },
+            )
+
+            // Auto-fit columns for both sheets
+            ordersSheet.columns.forEach((column) => {
+                column.width = Math.min(column.width || 10, 50) // Max width of 50
+            })
+            chartSheet.columns.forEach((column) => {
+                column.width = Math.min(column.width || 10, 50) // Max width of 50
+            })
+
+            // Set response headers
+            const fileName = `renus-home-foods-data-${new Date().toISOString().split('T')[0]}.xlsx`
+            res.setHeader(
+                'Content-Type',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+            res.setHeader(
+                'Content-Disposition',
+                `attachment; filename="${fileName}"`,
+            )
+
+            // Write workbook to response
+            await workbook.xlsx.write(res)
+            res.end()
+        } catch (error) {
+            const cleanMessage =
+                'Error in exportExcelData: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
+
+            logger.error(err)
+            if (error instanceof HttpException) {
+                throw error
+            }
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to export Excel data. ' + errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

@@ -1,5 +1,5 @@
 import { DataTypes, Model } from 'sequelize'
-import { sequelize } from './database'
+import { sequelize } from '../database/database'
 
 export class User extends Model {
     public id!: number
@@ -1467,6 +1467,128 @@ Location.belongsToMany(Product, {
     foreignKey: 'locationId',
     as: 'products',
 })
+
+// Review Model
+export class Review extends Model {
+    public id!: number
+    public name!: string
+    public phone!: string
+    public userId?: number
+    public review!: string
+    public rating?: number
+    public photo?: string
+    public readonly createdAt!: Date
+    public readonly updatedAt!: Date
+}
+
+Review.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        name: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        phone: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        userId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+            references: {
+                model: User,
+                key: 'id',
+            },
+            onDelete: 'SET NULL',
+        },
+        rating: {
+            type: DataTypes.DOUBLE,
+            allowNull: true,
+            defaultValue: null,
+        },
+        review: {
+            type: DataTypes.TEXT,
+            allowNull: false,
+        },
+        photo: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+        highlight: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'reviews',
+        timestamps: true,
+    },
+)
+
+// ReviewProduct Model (junction table for many-to-many between Review and Product)
+export class ReviewProduct extends Model {
+    public id!: number
+    public reviewId!: number
+    public productId!: number
+}
+
+ReviewProduct.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        reviewId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Review,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        productId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Product,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+    },
+    {
+        sequelize,
+        tableName: 'reviewproducts',
+        timestamps: true,
+    },
+)
+
+// Associations for Review models
+Review.belongsToMany(Product, {
+    through: ReviewProduct,
+    foreignKey: 'reviewId',
+    as: 'products',
+})
+Product.belongsToMany(Review, {
+    through: ReviewProduct,
+    foreignKey: 'productId',
+    as: 'reviews',
+})
+
+Review.hasMany(ReviewProduct, { foreignKey: 'reviewId' })
+ReviewProduct.belongsTo(Review, { foreignKey: 'reviewId' })
+
+Product.hasMany(ReviewProduct, { foreignKey: 'productId' })
+ReviewProduct.belongsTo(Product, { foreignKey: 'productId' })
 
 // Associations for Item models
 Item.hasMany(ItemInvoice, { foreignKey: 'itemId' })

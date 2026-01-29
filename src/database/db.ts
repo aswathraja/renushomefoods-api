@@ -1,6 +1,6 @@
+import { logger } from '../logger/logger'
+import '../models/models'
 import { sequelize } from './database'
-import { logger } from './logger'
-import './models'
 
 export { sequelize }
 
