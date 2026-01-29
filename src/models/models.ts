@@ -446,7 +446,7 @@ PriceList.init(
         },
         bomCost: {
             type: DataTypes.FLOAT,
-            allowNull: false,
+            allowNull: true,
         },
         productid: {
             type: DataTypes.INTEGER.UNSIGNED,

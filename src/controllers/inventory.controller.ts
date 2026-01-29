@@ -419,9 +419,7 @@ export class InventoryController {
     @Post('get-categories')
     async getCategories(@Body() body: { request?: string }) {
         try {
-            console.log('body', body)
             const decryptedBody = decryptPayload(body.request)
-            console.log('decryptedBody', decryptedBody)
             const whereClause: any = {}
             if (decryptedBody?.type) whereClause.type = decryptedBody.type
             if (
