@@ -947,19 +947,19 @@ export class OrderController {
                     order.toJSON().status === 'Ordered')
             ) {
                 // // Send order invoice email to user
-                // await this.appService.sendMail({
-                //     to: user.toJSON().email,
-                //     subject: "Your Order Invoice - Renu's Home Foods",
-                //     template: 'order-invoice',
-                //     data: orderInvoiceData,
-                // })
-                // // Send order invoice email to user
-                // await this.appService.sendMail({
-                //     to: process.env.SMTP_USER,
-                //     subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
-                //     template: 'order-invoice',
-                //     data: orderInvoiceData,
-                // })
+                await this.appService.sendMail({
+                    to: user.toJSON().email,
+                    subject: "Your Order Invoice - Renu's Home Foods",
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+                // Send order invoice email to user
+                await this.appService.sendMail({
+                    to: process.env.SMTP_USER,
+                    subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
             }
 
             const encryptedResponse = {
