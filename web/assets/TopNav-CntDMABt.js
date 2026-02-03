@@ -1,0 +1,1 @@
+import{j as r}from"./index-BoxPh3JM.js";import{N as o}from"./NavBar-DEHhcvRU.js";import{T as s}from"./TopBar-CX_8npq5.js";const p=()=>r.jsxs(r.Fragment,{children:[r.jsx(s,{}),r.jsx(o,{})]});export{p as T};
