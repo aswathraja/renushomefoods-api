@@ -271,7 +271,7 @@ Category.init(
             allowNull: true,
             defaultValue: 'Product',
         },
-        rank: {
+        displayOrder: {
             type: DataTypes.INTEGER,
             allowNull: true,
             defaultValue: null,
@@ -397,7 +397,7 @@ Product.init(
             },
             onDelete: 'SET NULL',
         },
-        rank: {
+        displayOrder: {
             type: DataTypes.INTEGER,
             allowNull: true,
             defaultValue: null,
@@ -501,12 +501,12 @@ ProductImage.init(
             },
             onDelete: 'CASCADE',
         },
-        rank: {
+        displayOrder: {
             type: DataTypes.INTEGER,
             allowNull: true,
             defaultValue: null,
         },
-        type: {
+        description: {
             type: DataTypes.STRING,
             allowNull: true,
             defaultValue: null,
@@ -1417,7 +1417,7 @@ export class ItemImage extends Model {
     public id!: number
     public itemId!: number
     public image!: string
-    public type!: string
+    public description!: string
 }
 
 ItemImage.init(
@@ -1440,11 +1440,12 @@ ItemImage.init(
             type: DataTypes.STRING,
             allowNull: false,
         },
-        type: {
+        description: {
             type: DataTypes.STRING,
-            allowNull: false,
+            allowNull: true,
+            defaultValue: null,
         },
-        rank: {
+        displayOrder: {
             type: DataTypes.INTEGER,
             allowNull: true,
         },
@@ -1455,7 +1456,6 @@ ItemImage.init(
         timestamps: true,
     },
 )
-
 // Associations for Product models
 Product.belongsToMany(Location, {
     through: ProductLocation,

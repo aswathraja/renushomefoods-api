@@ -16,7 +16,9 @@ import { Op } from 'sequelize'
 import { sequelize } from '../database/db'
 import { logger } from '../logger/logger'
 import {
+    CartProduct,
     Category,
+    CouponProducts,
     Item,
     ItemImage,
     ItemInvoice,
@@ -26,6 +28,7 @@ import {
     Product,
     ProductImage,
     ProductLocation,
+    ReviewProduct,
     Role,
     User,
     UserSession,
@@ -446,7 +449,7 @@ export class InventoryController {
 
             const categories = await Category.findAll({
                 where: whereClause,
-                order: [['rank', 'ASC']],
+                order: [['displayOrder', 'ASC']],
             })
             return { response: encryptPayload(categories) }
         } catch (error) {
@@ -474,21 +477,28 @@ export class InventoryController {
     ) {
         try {
             const decryptedBody = decryptPayload(body.request)
-            const { id, category, rank, image, description, token, type } =
-                decryptedBody as {
-                    id?: number
-                    category: string
-                    rank?: number
-                    image?: string
-                    type?: string
-                    description?: string
-                    token: string
-                }
-            if (!category || !token || !rank || !type) {
+            const {
+                id,
+                category,
+                displayOrder,
+                image,
+                description,
+                token,
+                type,
+            } = decryptedBody as {
+                id?: number
+                category: string
+                displayOrder?: number
+                image?: string
+                type?: string
+                description?: string
+                token: string
+            }
+            if (!category || !token || !displayOrder || !type) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: 'Category name,rank,type and token are required',
+                            error: 'Category name,displayOrder,type and token are required',
                         }),
                     },
                     HttpStatus.BAD_REQUEST,
@@ -524,7 +534,12 @@ export class InventoryController {
                         HttpStatus.BAD_REQUEST,
                     )
                 }
-                const updateData: any = { category, rank, description, type }
+                const updateData: any = {
+                    category,
+                    displayOrder,
+                    description,
+                    type,
+                }
                 if (imagePath !== undefined) {
                     updateData.image = imagePath
                 }
@@ -532,7 +547,7 @@ export class InventoryController {
             } else {
                 cat = await Category.create({
                     category,
-                    rank,
+                    displayOrder,
                     image: imagePath || null,
                     description,
                     type,
@@ -1072,9 +1087,9 @@ export class InventoryController {
                         through: { attributes: ['quantity'] },
                         as: 'locations',
                     },
-                    { model: ProductImage, order: [['rank', 'ASC']] },
+                    { model: ProductImage, order: [['displayOrder', 'ASC']] },
                 ],
-                order: [['rank', 'ASC']],
+                order: [['displayOrder', 'ASC']],
             })
             // Filter by image presence
             if (decryptedBody?.image === true) {
@@ -1122,7 +1137,7 @@ export class InventoryController {
                 pricelists,
                 productimages,
                 tagline,
-                rank,
+                displayOrder,
                 locations,
                 token,
             } = decryptedBody as {
@@ -1132,18 +1147,18 @@ export class InventoryController {
                 pricelists: any[]
                 productimages: {
                     image?: string
-                    type: string
-                    rank: number
+                    description: string
+                    displayOrder: number
                     id?: number
                     existing?: {
                         id: number
                         fileName: string
-                        type?: string
-                        rank?: number
+                        description?: string
+                        displayOrder?: number
                     }
                 }[]
                 tagline?: string
-                rank?: number
+                displayOrder?: number
                 locations: { locationId: number; quantity: number }[]
                 token: string
             }
@@ -1175,13 +1190,18 @@ export class InventoryController {
                 if (!product) {
                     return { error: 'Product not found' }
                 }
-                await product.update({ name, categoryid, tagline, rank })
+                await product.update({
+                    name,
+                    categoryid,
+                    tagline,
+                    displayOrder,
+                })
             } else {
                 product = await Product.create({
                     name,
                     categoryid,
                     tagline,
-                    rank,
+                    displayOrder,
                 })
             }
             // Delete pricelists not in the request
@@ -1245,7 +1265,13 @@ export class InventoryController {
                     const existingImage = await ProductImage.findAll({
                         where: { fileName: imagePath },
                     })
-                    if (existingImage.length === 1) {
+                    const existingItemImages = await ItemImage.findAll({
+                        where: { fileName: imagePath },
+                    })
+                    if (
+                        existingImage.length === 1 &&
+                        existingItemImages.length === 0
+                    ) {
                         unlinkSync(fullPath)
                     }
                 }
@@ -1253,8 +1279,11 @@ export class InventoryController {
                 // Delete record
                 await img.destroy()
             }
-            const imagesToAdd: { image: string; type: string; rank: number }[] =
-                []
+            const imagesToAdd: {
+                image: string
+                description: string
+                displayOrder: number
+            }[] = []
             const newImages = productimages.filter((img) => !img.id)
             const newImageIndex = 0
             // Save uploaded files
@@ -1263,8 +1292,8 @@ export class InventoryController {
                     const savedPath = saveFile(file, 'product')
                     imagesToAdd.push({
                         image: savedPath,
-                        type: newImages[newImageIndex].type,
-                        rank: newImages[newImageIndex].rank,
+                        description: newImages[newImageIndex].description,
+                        displayOrder: newImages[newImageIndex].displayOrder,
                     })
                 }
             }
@@ -1274,22 +1303,23 @@ export class InventoryController {
                 await ProductImage.create({
                     fileName: img.image,
                     productId: product.id,
-                    rank: img.rank,
-                    type: img.type,
+                    displayOrder: img.displayOrder,
+                    description: img.description,
                 })
             }
 
             // Update existing images
             const existingImages = productimages.filter(
-                (img) =>
-                    img.existing &&
-                    img.existing.id &&
-                    !deletedImageIds.includes(img.existing.id),
+                (img) => img.id && !deletedImageIds.includes(img.id),
             )
             for (const img of existingImages) {
                 await ProductImage.update(
-                    { type: img.type, rank: img.rank || img.existing.rank },
-                    { where: { id: img.existing.id } },
+                    {
+                        description: img.description,
+                        displayOrder:
+                            img.displayOrder || img.existing.displayOrder,
+                    },
+                    { where: { id: img.id } },
                 )
             }
 
@@ -1343,7 +1373,7 @@ export class InventoryController {
                 include: [
                     { model: PriceList },
                     { model: Category },
-                    { model: ProductImage, order: [['rank', 'ASC']] },
+                    { model: ProductImage, order: [['displayOrder', 'ASC']] },
                     {
                         model: Location,
                         through: { attributes: ['quantity'] },
@@ -1397,14 +1427,10 @@ export class InventoryController {
                 categoryId?: number
                 images: {
                     image?: string
-                    type: string
-                    rank: number
-                    existing?: {
-                        id: number
-                        fileName: string
-                        type?: string
-                        rank?: number
-                    }
+                    description: string
+                    displayOrder: number
+                    id?: number
+                    fileName?: string
                 }[]
                 locations: {
                     id?: number
@@ -1476,7 +1502,7 @@ export class InventoryController {
                 where: { itemId: item.toJSON().id },
             })
             // Delete images not in the request
-            const existingImageIds = images.map((img) => img.existing?.id)
+            const existingImageIds = images.map((img) => img?.id)
             const imagesToDelete = allExistingImages.filter(
                 (img) => !existingImageIds.includes(img.toJSON().id),
             )
@@ -1502,9 +1528,12 @@ export class InventoryController {
                 await img.destroy()
             }
             // Handle images
-            const imagesToAdd: { image: string; type: string; rank: number }[] =
-                []
-            const newImages = images.filter((img) => !img.existing)
+            const imagesToAdd: {
+                image: string
+                description: string
+                displayOrder: number
+            }[] = []
+            const newImages = images.filter((img) => !img.id)
             const newImageIndex = 0
             // Save uploaded files
             if (files && files.length > 0) {
@@ -1512,8 +1541,8 @@ export class InventoryController {
                     const savedPath = saveFile(file, 'item')
                     imagesToAdd.push({
                         image: savedPath,
-                        type: newImages[newImageIndex].type,
-                        rank: newImages[newImageIndex].rank,
+                        description: newImages[newImageIndex].description,
+                        displayOrder: newImages[newImageIndex].displayOrder,
                     })
                 }
             }
@@ -1522,22 +1551,22 @@ export class InventoryController {
                 await ItemImage.create({
                     itemId: item.toJSON().id,
                     image: img.image,
-                    type: img.type,
-                    rank: img.rank,
+                    description: img.description,
+                    displayOrder: img.displayOrder,
                 })
             }
 
             // Update existing images
             const imagesToUpdate = images.filter(
-                (img) =>
-                    img.existing &&
-                    img.existing.id &&
-                    deletedImageIds.indexOf(img.existing.id) === -1,
+                (img) => img.id && deletedImageIds.indexOf(img.id) === -1,
             )
             for (const img of imagesToUpdate) {
                 await ItemImage.update(
-                    { type: img.type, rank: img.rank || null },
-                    { where: { id: img.existing.id } },
+                    {
+                        description: img.description,
+                        displayOrder: img.displayOrder || null,
+                    },
+                    { where: { id: img.id } },
                 )
             }
             // Handle locations with quantities
@@ -1862,6 +1891,163 @@ export class InventoryController {
                 {
                     error: encryptPayload({
                         error: 'Failed to fetch items. ' + errorMessage,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
+    @Post('delete-product')
+    async deleteProduct(@Body() body: { request?: string }) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody as {
+                id: number
+                token: string
+            }
+            if (!id || !token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Product id and token are required',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check admin role
+            try {
+                await this.checkAdminRole(token)
+            } catch (error) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({ error: error.message }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Find product
+            const product = await Product.findByPk(id)
+            if (!product) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({ error: 'Product not found' }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check if product is in any cart - block deletion if found
+            const cartProductCount = await CartProduct.count({
+                where: { productId: id },
+            })
+            if (cartProductCount > 0) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Cannot delete product as it is mapped in cart products',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Delete product images with file cleanup
+            const productImages = await ProductImage.findAll({
+                where: { productId: id },
+            })
+            for (const img of productImages) {
+                const imagePath = img.toJSON().fileName
+                const fullPath = path.join(
+                    process.env.INVENTORY_PATH || '',
+                    imagePath,
+                )
+                if (existsSync(fullPath)) {
+                    // Check if imagePath is used in other ProductImage records (different products)
+                    const otherProductImages = await ProductImage.findAll({
+                        where: {
+                            fileName: imagePath,
+                            productId: { [Op.ne]: id },
+                        },
+                    })
+                    // Check if imagePath is used in ItemImage records
+                    const itemImages = await ItemImage.findAll({
+                        where: { image: imagePath },
+                    })
+                    // If not used elsewhere, delete the file
+                    if (
+                        otherProductImages.length === 0 &&
+                        itemImages.length === 0
+                    ) {
+                        try {
+                            unlinkSync(fullPath)
+                        } catch (err) {
+                            logger.error(
+                                new Error(
+                                    `Failed to delete product image file: ${err.message}`,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            // Delete product image records (will be handled by CASCADE, but explicit for file cleanup)
+            await ProductImage.destroy({
+                where: { productId: id },
+            })
+
+            // Delete review product mappings
+            await ReviewProduct.destroy({
+                where: { productId: id },
+            })
+
+            // Delete coupon product mappings
+            await CouponProducts.destroy({
+                where: { productId: id },
+            })
+
+            // Delete product locations
+            await ProductLocation.destroy({
+                where: { productId: id },
+            })
+
+            // Delete price lists
+            await PriceList.destroy({
+                where: { productid: id },
+            })
+
+            // Delete product
+            await product.destroy()
+
+            return {
+                response: encryptPayload({
+                    message: 'Product deleted successfully',
+                }),
+            }
+        } catch (error) {
+            const cleanMessage =
+                'Error in deleteProduct: ' +
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error.message ||
+                    'Unknown error')
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: 'Failed to delete product. ' + errorMessage,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
