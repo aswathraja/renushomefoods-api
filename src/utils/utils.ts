@@ -37,6 +37,24 @@ export function comparePassword(password: string, hash: string): boolean {
     return SHA256(password).toString() === hash
 }
 
+// Helper to validate media file types (images and videos)
+const isValidMediaType = (mimeType: string): boolean => {
+    const allowedImageTypes = [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'image/svg+xml',
+    ]
+    const allowedVideoTypes = ['video/mp4', 'video/quicktime']
+
+    return (
+        allowedImageTypes.includes(mimeType) ||
+        allowedVideoTypes.includes(mimeType) ||
+        mimeType.startsWith('image/')
+    )
+}
+
 // Helper to save uploaded file based on type and return imagePath
 export const saveFile = (
     uploadedFile: Express.Multer.File,
@@ -44,6 +62,18 @@ export const saveFile = (
     reviewId?: number,
 ): string => {
     if (!uploadedFile) return null
+
+    // Validate file type (images and videos only)
+    if (!isValidMediaType(uploadedFile.mimetype)) {
+        throw new HttpException(
+            {
+                error: encryptPayload({
+                    error: 'Invalid file type. Only images (JPEG, PNG, GIF, WebP, SVG) and videos (MP4, MOV) are allowed.',
+                }),
+            },
+            HttpStatus.BAD_REQUEST,
+        )
+    }
 
     let basePath: string
     let returnPrefix: string
