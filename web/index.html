@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/webp" href="/img/logo.webp">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Renu's Home Foods</title>
        <!-- Google Web Fonts -->
         <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -34,8 +34,40 @@
         }
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-DgNSKDh3.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-y7TMr1eA.css">
+    <!-- Zoom reset utility - prevents mobile zoom from persisting after navigation -->
+    <script>
+      window.resetZoom = function() {
+        // Method 1: Reset viewport scale
+        var viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+          var content = viewport.getAttribute('content');
+          viewport.setAttribute('content', content + ', maximum-scale=1.0');
+          setTimeout(function() {
+            viewport.setAttribute('content', content);
+          }, 50);
+        }
+        
+        // Method 2: Force scroll to top and reset zoom via window scroll
+        window.scrollTo(0, 0);
+        
+        // Method 3: For iOS Safari - blur any active element
+        if (document.activeElement && document.activeElement.blur) {
+          document.activeElement.blur();
+        }
+      };
+      
+      // Reset zoom on page load
+      window.addEventListener('load', window.resetZoom);
+    </script>
+    <script type="module" crossorigin src="/assets/index-Bzbs1pXN.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-base-ui-BXIcfa4M.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-Bk0qDDMD.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-pdf-CtkwMsdI.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-charts-DTq7uDuz.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-radix-B6Rg7jVq.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-FTV6Dp_q.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-motion-DKNEqpS6.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-4jGJEv1G.css">
   </head>
   <body>
     <div id="root"></div>
