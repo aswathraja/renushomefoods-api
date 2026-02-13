@@ -1477,6 +1477,8 @@ export class Review extends Model {
     public review!: string
     public rating?: number
     public photo?: string
+    public location?: string
+    public reviewDate?: Date
     public readonly createdAt!: Date
     public readonly updatedAt!: Date
 }
@@ -1523,6 +1525,16 @@ Review.init(
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+        },
+        location: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+        reviewDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            defaultValue: null,
         },
     },
     {

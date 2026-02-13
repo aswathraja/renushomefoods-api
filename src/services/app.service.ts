@@ -160,7 +160,7 @@ export class AppService {
             const items = order
                 .toJSON()
                 .Cart.CartProducts.map((cartProduct) => ({
-                    name: (cartProduct.Product as any)?.name,
+                    name: cartProduct.Product?.name,
                     quantity: cartProduct.quantity,
                     price: cartProduct.PriceList.unitprice.toFixed(2),
                     total: (
@@ -479,6 +479,10 @@ export class AppService {
         data: any
     }) {
         try {
+            const fromAddress =
+                template === 'order-invoice'
+                    ? process.env.ORDERS_EMAIL
+                    : process.env.CONTACT_EMAIL
             const transporter = nodemailer.createTransport({
                 host: process.env.SMTP_HOST || 'smtp.gmail.com',
                 port: Number(process.env.SMTP_PORT) || 587,
@@ -492,7 +496,7 @@ export class AppService {
             const html = this.renderTemplate(template, data)
 
             const info = await transporter.sendMail({
-                from: `"Renu's Home Foods" <${process.env.SMTP_USER}>`,
+                from: `"Renu's Home Foods" <${fromAddress}>`,
                 to,
                 subject,
                 html,

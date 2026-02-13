@@ -369,7 +369,7 @@ export class OrderController {
                 }
             }
             let products: any[] = []
-            const cartJSON = pendingCart.toJSON() as any
+            const cartJSON = pendingCart.toJSON()
             if (cartJSON && cartJSON.CartProducts) {
                 products = cartJSON.CartProducts.map((cp: any) => ({
                     productId: cp.productId,
@@ -955,7 +955,7 @@ export class OrderController {
                 })
                 // Send order invoice email to user
                 await this.appService.sendMail({
-                    to: process.env.SMTP_USER,
+                    to: process.env.ORDERS_EMAIL,
                     subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
                     template: 'order-invoice',
                     data: orderInvoiceData,
@@ -1561,7 +1561,7 @@ export class OrderController {
             }
 
             // Check if user already has an existing cart
-            let existingCart = await Cart.findOne({
+            const existingCart = await Cart.findOne({
                 where: {
                     userId,
                     status: 'Created',
@@ -1575,8 +1575,8 @@ export class OrderController {
             })
 
             let newCart
-            let createdProducts = []
-            let updatedProducts = []
+            const createdProducts = []
+            const updatedProducts = []
 
             if (existingCart) {
                 // Update existing cart
@@ -2023,6 +2023,8 @@ export class OrderController {
                 rating,
                 products,
                 highlight,
+                location,
+                reviewDate,
             } = decryptedBody as {
                 id?: number
                 name: string
@@ -2032,6 +2034,8 @@ export class OrderController {
                 rating: number
                 highlight: boolean
                 products?: number[]
+                location?: string
+                reviewDate?: string
             }
 
             // Validate mandatory fields
@@ -2121,6 +2125,8 @@ export class OrderController {
                     review,
                     rating,
                     highlight,
+                    location,
+                    reviewDate: reviewDate ? new Date(reviewDate) : null,
                     photo:
                         photoPath !== null
                             ? photoPath
@@ -2135,6 +2141,8 @@ export class OrderController {
                     review,
                     rating,
                     highlight: highlight ?? false,
+                    location,
+                    reviewDate: reviewDate ? new Date(reviewDate) : null,
                     photo: null,
                 })
                 // Reload to get the updated instance
@@ -2235,6 +2243,7 @@ export class OrderController {
                 fromDate,
                 toDate,
                 rating,
+                location,
             } = decryptedBody as {
                 highlight?: boolean
                 products?: number[]
@@ -2243,6 +2252,7 @@ export class OrderController {
                 fromDate?: string
                 toDate?: string
                 rating?: number
+                location?: string
             }
 
             // Build where clause based on highlight filter
@@ -2271,25 +2281,65 @@ export class OrderController {
                 )
             }
 
+            // Location filter - case insensitive contains search
+            if (location && location.trim()) {
+                whereClause[Op.and] = whereClause[Op.and] || []
+                whereClause[Op.and].push(
+                    sequelize.where(
+                        sequelize.fn('LOWER', sequelize.col('Review.location')),
+                        {
+                            [Op.like]: `%${location.toLowerCase().trim()}%`,
+                        },
+                    ),
+                )
+            }
+
             // Date range filter - updatedAt between fromDate and toDate
             if (fromDate || toDate) {
                 whereClause.updatedAt = {}
+                whereClause.reviewDate = {}
                 if (fromDate) {
-                    whereClause.updatedAt[Op.gte] = new Date(fromDate)
+                    whereClause.reviewDate = {
+                        ...whereClause.reviewDate,
+                        [Op.gte]: new Date(fromDate),
+                    }
+                    whereClause.updatedAt = {
+                        ...whereClause.updatedAt,
+                        [Op.gte]: new Date(fromDate),
+                    }
                 }
                 if (toDate) {
                     // Set to end of day for toDate
                     const toDateObj = new Date(toDate)
                     toDateObj.setHours(23, 59, 59, 999)
-                    whereClause.updatedAt[Op.lte] = toDateObj
+                    whereClause.reviewDate = {
+                        ...whereClause.reviewDate,
+                        [Op.lte]: toDateObj,
+                    }
+                    whereClause.updatedAt = {
+                        ...whereClause.updatedAt,
+                        [Op.lte]: toDateObj,
+                    }
                 }
             }
-
             // Rating filter - rating >= N AND rating < N+1
             if (rating !== undefined && rating !== null) {
                 whereClause.rating = {
                     [Op.and]: [{ [Op.gte]: rating }, { [Op.lt]: rating + 1 }],
                 }
+            }
+
+            // Location filter - case insensitive contains search
+            if (location && location.trim()) {
+                whereClause[Op.and] = whereClause[Op.and] || []
+                whereClause[Op.and].push(
+                    sequelize.where(
+                        sequelize.fn('LOWER', sequelize.col('Review.location')),
+                        {
+                            [Op.like]: `%${location.toLowerCase().trim()}%`,
+                        },
+                    ),
+                )
             }
 
             // Build the base review query

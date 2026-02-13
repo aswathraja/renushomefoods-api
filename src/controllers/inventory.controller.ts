@@ -1385,12 +1385,12 @@ export class InventoryController {
         } catch (error) {
             const cleanMessage =
                 'Error in saveProduct: ' +
-                ((error as any)?.original?.sqlMessage ||
-                    (error as any)?.parent?.sqlMessage ||
-                    (error as any)?.message ||
+                (error?.original?.sqlMessage ||
+                    error?.parent?.sqlMessage ||
+                    error?.message ||
                     'Unknown error')
             const err = new Error(cleanMessage)
-            err.stack = (error as any)?.stack // keep original stack
+            err.stack = error?.stack // keep original stack
 
             logger.error(err) // Winston now logs message + stack
             return {

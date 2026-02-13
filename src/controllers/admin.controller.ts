@@ -423,7 +423,7 @@ export class AdminController {
                     )
                 }
 
-                let updateData: any = {
+                const updateData: any = {
                     name,
                     startDate: new Date(startDate),
                     endDate: new Date(endDate),
@@ -1545,7 +1545,7 @@ export class AdminController {
                         HttpStatus.BAD_REQUEST,
                     )
                 }
-                const priceList = (dbProduct as any).PriceLists.find(
+                const priceList = dbProduct.PriceLists.find(
                     (pl: any) => pl.id === prod.priceListId,
                 )
                 if (!priceList) {
@@ -1560,7 +1560,7 @@ export class AdminController {
                 }
                 const existing = existingCartProducts.find(
                     (cp: any) =>
-                        cp.productId === (dbProduct as any).id &&
+                        cp.productId === dbProduct.id &&
                         cp.priceListId === prod.priceListId,
                 )
                 if (existing) {
@@ -1571,7 +1571,7 @@ export class AdminController {
                 } else {
                     await CartProduct.create({
                         cartId: cart.id,
-                        productId: (dbProduct as any).id,
+                        productId: dbProduct.id,
                         priceListId: prod.priceListId,
                         quantity: prod.quantity,
                     })
@@ -1582,7 +1582,7 @@ export class AdminController {
             for (const existing of existingCartProducts) {
                 if (
                     productIdsInRequest.indexOf(
-                        (existing.toJSON().Product as any)?.name,
+                        existing.toJSON().Product?.name,
                     ) === -1
                 ) {
                     await existing.destroy()
@@ -1706,9 +1706,9 @@ export class AdminController {
                     data: orderInvoiceData,
                 })
 
-                // Send order invoice email to user
+                // Send order invoice email to admin
                 await this.appService.sendMail({
-                    to: process.env.SMTP_USER,
+                    to: process.env.ORDERS_EMAIL,
                     subject: isNewOrder
                         ? `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`
                         : isProductsModified

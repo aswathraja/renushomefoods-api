@@ -30,7 +30,10 @@ export class AppController {
             'DB_USERNAME',
             'DB_PASSWORD',
             'DB_HOST',
-            'SMTP_USER',
+            'CONTACT_EMAIL',
+            'ORDERS_EMAIL',
+            'CONTACT_PASS',
+            'ORDERS_PASS',
         ]
 
         for (const envVar of requiredEnvVars) {
@@ -88,7 +91,7 @@ export class AppController {
                 message: decryptedBody.message,
             })
             await this.appService.sendMail({
-                to: process.env.SMTP_USER,
+                to: process.env.CONTACT_EMAIL,
                 subject: `Renu's Home Foods - Message from ${decryptedBody.name}`,
                 template: 'simple-message',
                 data: {

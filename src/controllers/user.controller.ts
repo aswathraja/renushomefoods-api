@@ -482,7 +482,7 @@ export class UserController {
             err.stack = error.stack // keep original stack
             if (error instanceof HttpException) {
                 const response = error.getResponse() as any
-                const supress: Boolean = response.supress
+                const supress: boolean = response.supress
                 if (Boolean(supress) === false) {
                     logger.error(err)
                 } else {
