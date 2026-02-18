@@ -2185,7 +2185,7 @@ export class OrderController {
                     }
                 }
                 // Save new photo with review ID prefix
-                photoPath = saveFile(
+                photoPath = await saveFile(
                     photo,
                     'reviews',
                     id ?? reviewRecord.toJSON().id,

@@ -517,10 +517,6 @@ export class InventoryController {
                 )
             }
 
-            let imagePath = image || null
-            if (file) {
-                imagePath = saveFile(file, 'category')
-            }
             let cat
             if (id) {
                 cat = await Category.findByPk(id)
@@ -534,6 +530,14 @@ export class InventoryController {
                         HttpStatus.BAD_REQUEST,
                     )
                 }
+                let imagePath = image || null
+                if (file) {
+                    imagePath = await saveFile(
+                        file,
+                        'category',
+                        cat.toJSON().id,
+                    )
+                }
                 const updateData: any = {
                     category,
                     displayOrder,
@@ -545,13 +549,24 @@ export class InventoryController {
                 }
                 await cat.update(updateData)
             } else {
+                // Create category first with null image
                 cat = await Category.create({
                     category,
                     displayOrder,
-                    image: imagePath || null,
+                    image: null,
                     description,
                     type,
                 })
+                // Save file with new category ID and update
+                let imagePath = image || null
+                if (file) {
+                    imagePath = await saveFile(
+                        file,
+                        'category',
+                        cat.toJSON().id,
+                    )
+                    await cat.update({ image: imagePath })
+                }
             }
             return { response: encryptPayload(cat) }
         } catch (error) {
@@ -843,10 +858,6 @@ export class InventoryController {
                 )
             }
 
-            let photoPath = photo || null
-            if (file) {
-                photoPath = saveFile(file, 'location')
-            }
             let loc
             if (id) {
                 loc = await Location.findByPk(id)
@@ -858,6 +869,14 @@ export class InventoryController {
                             }),
                         },
                         HttpStatus.BAD_REQUEST,
+                    )
+                }
+                let photoPath = photo || null
+                if (file) {
+                    photoPath = await saveFile(
+                        file,
+                        'location',
+                        loc.toJSON().id,
                     )
                 }
                 const updateData: any = {
@@ -875,6 +894,7 @@ export class InventoryController {
                 }
                 await loc.update(updateData)
             } else {
+                // Create location first with null photo
                 loc = await Location.create({
                     name,
                     floor,
@@ -884,8 +904,18 @@ export class InventoryController {
                     city,
                     state,
                     country,
-                    photo: photoPath || null,
+                    photo: null,
                 })
+                // Save file with new location ID and update
+                let photoPath = photo || null
+                if (file) {
+                    photoPath = await saveFile(
+                        file,
+                        'location',
+                        loc.toJSON().id,
+                    )
+                    await loc.update({ photo: photoPath })
+                }
             }
             return { response: encryptPayload(loc) }
         } catch (error) {
@@ -1266,7 +1296,7 @@ export class InventoryController {
                         where: { fileName: imagePath },
                     })
                     const existingItemImages = await ItemImage.findAll({
-                        where: { fileName: imagePath },
+                        where: { image: imagePath },
                     })
                     if (
                         existingImage.length === 1 &&
@@ -1286,10 +1316,14 @@ export class InventoryController {
             }[] = []
             const newImages = productimages.filter((img) => !img.id)
             const newImageIndex = 0
-            // Save uploaded files
+            // Save uploaded files with product ID
             if (files && files.length > 0) {
                 for (const file of files) {
-                    const savedPath = saveFile(file, 'product')
+                    const savedPath = await saveFile(
+                        file,
+                        'product',
+                        product.id,
+                    )
                     imagesToAdd.push({
                         image: savedPath,
                         description: newImages[newImageIndex].description,
@@ -1535,10 +1569,14 @@ export class InventoryController {
             }[] = []
             const newImages = images.filter((img) => !img.id)
             const newImageIndex = 0
-            // Save uploaded files
+            // Save uploaded files with item ID
             if (files && files.length > 0) {
                 for (const file of files) {
-                    const savedPath = saveFile(file, 'item')
+                    const savedPath = await saveFile(
+                        file,
+                        'item',
+                        item.toJSON().id,
+                    )
                     imagesToAdd.push({
                         image: savedPath,
                         description: newImages[newImageIndex].description,

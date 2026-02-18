@@ -435,7 +435,11 @@ export class AdminController {
                     // Delete old file if exists
                     deleteFileIfExists(adCampaign.toJSON().imagePath as string)
                     // Save new file
-                    const savedImagePath = saveFile(file, 'ads')
+                    const savedImagePath = await saveFile(
+                        file,
+                        'ads',
+                        adCampaign.toJSON()?.id,
+                    )
                     // Add imagePath to update data
                     updateData.imagePath = savedImagePath
                 }
@@ -485,20 +489,23 @@ export class AdminController {
                     })
                 }
             } else {
-                // Creating new campaign
-                let savedImagePath = null
-                if (file) {
-                    savedImagePath = saveFile(file, 'ads')
-                }
-
+                // Creating new campaign - create first without image
                 adCampaign = await AdCampaign.create({
                     name,
                     startDate: new Date(startDate),
                     endDate: new Date(endDate),
                     message,
                     subject,
-                    imagePath: savedImagePath,
+                    imagePath: null,
                 })
+
+                // Save file with the new campaign ID if file exists
+                let savedImagePath = null
+                if (file) {
+                    savedImagePath = await saveFile(file, 'ads', adCampaign.id)
+                    // Update campaign with imagePath
+                    await adCampaign.update({ imagePath: savedImagePath })
+                }
 
                 // Deduplicate userIds before creating
                 const uniqueUserIdsForCreate = Array.from(new Set(userIds))
