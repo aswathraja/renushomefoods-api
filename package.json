@@ -36,9 +36,9 @@
     "handlebars": "^4.7.8",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
-    "mysql2": "^3.17.2",
+    "mysql2": "^3.18.1",
     "nodemailer": "^8.0.1",
-    "puppeteer": "^24.37.3",
+    "puppeteer": "^24.37.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "sequelize": "^6.37.7",
@@ -47,21 +47,21 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.3",
+    "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.1.14",
     "@swc/cli": "^0.8.0",
-    "@swc/core": "^1.15.11",
+    "@swc/core": "^1.15.13",
     "@types/compression": "^1.8.1",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.0.0",
-    "@types/node": "^25.2.3",
-    "@types/supertest": "^6.0.3",
-    "eslint": "^10.0.0",
+    "@types/node": "^25.3.1",
+    "@types/supertest": "^7.2.0",
+    "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "jest": "^30.2.0",
@@ -72,7 +72,7 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.0"
+    "typescript-eslint": "^8.56.1"
   },
   "jest": {
     "moduleFileExtensions": [
