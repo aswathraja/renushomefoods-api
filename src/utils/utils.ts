@@ -101,7 +101,7 @@ const convertVideoToMp4 = async (
 ): Promise<void> => {
     return new Promise((resolve, reject) => {
         // Create a temporary input file
-        const tempInputPath = outputPath + '.temp' + Date.now()
+        const tempInputPath = `${outputPath}.temp${Date.now()}`
 
         // Write input buffer to temp file
         writeFileSync(tempInputPath, inputBuffer)
@@ -241,7 +241,7 @@ export const saveFile = async (
         uploadedFile.originalname,
         path.extname(uploadedFile.originalname),
     )
-    let fileName = type + '-' + originalBaseName + fileExtension
+    let fileName = `${type}-${originalBaseName}${fileExtension}`
 
     // For review photos, ad campaign images, and inventory items, prepend the ID to the filename
     if (

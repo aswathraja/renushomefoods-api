@@ -41,11 +41,61 @@ import {
     UserSession,
 } from '../models/models'
 import { AppService } from '../services/app.service'
+import { ShippingService } from '../services/shipping.service'
 import { decryptPayload, encryptPayload, saveFile } from '../utils/utils'
 
 @Controller('order')
 export class OrderController {
-    constructor(private appService: AppService) {}
+    constructor(
+        private appService: AppService,
+        private shippingService: ShippingService,
+    ) {}
+
+    // Helper method to reduce PriceList quantity by 1 for each product in the order
+    // Only reduces if quantity > 0
+    private async reduceInventoryForProducts(products: any[]): Promise<void> {
+        for (const prod of products) {
+            try {
+                const priceList = await PriceList.findByPk(prod.priceListId)
+                if (priceList && priceList.toJSON().quantity > 0) {
+                    const currentQuantity = priceList.toJSON().quantity
+                    await priceList.update({
+                        quantity: currentQuantity - 1,
+                    })
+                    logger.info(
+                        `Reduced quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity - 1}`,
+                    )
+                }
+            } catch (error) {
+                logger.error(
+                    `Failed to reduce inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
+            }
+        }
+    }
+
+    // Helper method to increase PriceList quantity by 1 for each product in the order
+    // Called when order is cancelled to restore inventory
+    private async increaseInventoryForProducts(products: any[]): Promise<void> {
+        for (const prod of products) {
+            try {
+                const priceList = await PriceList.findByPk(prod.priceListId)
+                if (priceList) {
+                    const currentQuantity = priceList.toJSON().quantity || 0
+                    await priceList.update({
+                        quantity: currentQuantity + 1,
+                    })
+                    logger.info(
+                        `Increased quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity + 1} (order cancelled)`,
+                    )
+                }
+            } catch (error) {
+                logger.error(
+                    `Failed to increase inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
+            }
+        }
+    }
 
     @Post('get-order-details')
     async getOrderDetails(@Body() body: any) {
@@ -287,12 +337,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getOrderDetails: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getOrderDetails: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -306,7 +356,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch order details. ' + errorMessage,
+                        error: `Failed to fetch order details. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -397,12 +447,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getPendingOrder: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getPendingOrder: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -416,7 +466,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch pending order. ' + errorMessage,
+                        error: `Failed to fetch pending order. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -619,12 +669,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in saveOrUpdateCart: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in saveOrUpdateCart: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -638,7 +688,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to save or update cart. ' + errorMessage,
+                        error: `Failed to save or update cart. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -680,7 +730,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch cart. ' + errorMessage,
+                        error: `Failed to fetch cart. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -710,7 +760,6 @@ export class OrderController {
                 phone, // phone for address
                 token,
                 email,
-                username,
                 couponId,
             } = decryptPayload(body.request)
 
@@ -796,7 +845,7 @@ export class OrderController {
                 user = await User.create({
                     name: name || 'Unknown',
                     username: normalizedPhone,
-                    email: email, // No email in order
+                    email, // No email in order
                     phone: normalizedPhone,
                     password: '', // Assuming password is set later or not required
                     otp,
@@ -849,24 +898,24 @@ export class OrderController {
                 // Create new address
                 userAddress = await UserAddress.create({
                     userId: user.toJSON().id,
-                    name: name,
+                    name,
                     addressLine1: address,
-                    city: city,
-                    state: state,
-                    country: country, // Assuming default
-                    pincode: pincode,
+                    city,
+                    state,
+                    country, // Assuming default
+                    pincode,
                     phone: phone || mobile,
                     isDefault: true,
                 })
                 userAddress = await UserAddress.findOne({
                     where: {
                         userId: user.toJSON().id,
-                        name: name,
+                        name,
                         addressLine1: address,
-                        city: city,
-                        state: state,
-                        country: country, // Assuming default
-                        pincode: pincode,
+                        city,
+                        state,
+                        country, // Assuming default
+                        pincode,
                         phone: phone || mobile,
                         isDefault: true,
                     },
@@ -879,7 +928,7 @@ export class OrderController {
                     where: {
                         name: name || 'Unknown',
                         username: normalizedPhone,
-                        email: email, // No email in order
+                        email, // No email in order
                         phone: normalizedPhone,
                         password: '',
                     },
@@ -919,6 +968,22 @@ export class OrderController {
                     status: status || 'Ordered',
                 })
                 await order.reload() // Ensure the instance is reloaded with the generated id
+                // Reduce inventory for new orders with status 'Payment Processed' or 'Ordered'
+                const orderStatus = status || 'Ordered'
+                if (
+                    orderStatus === 'Payment Processed' ||
+                    orderStatus === 'Ordered'
+                ) {
+                    // Get cart products to reduce inventory
+                    const cartProducts = await CartProduct.findAll({
+                        where: { cartId },
+                        include: [PriceList],
+                    })
+                    const productsToReduce = cartProducts.map((cp: any) => ({
+                        priceListId: cp.toJSON().priceListId,
+                    }))
+                    await this.reduceInventoryForProducts(productsToReduce)
+                }
             }
 
             // Handle couponId: save or update in OrderCoupon table
@@ -967,12 +1032,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in saveOrUpdateOrder: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in saveOrUpdateOrder: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -986,8 +1051,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to save or update order. ' + errorMessage,
+                        error: `Failed to save or update order. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1024,12 +1088,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getOrderById: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getOrderById: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1043,7 +1107,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch order. ' + errorMessage,
+                        error: `Failed to fetch order. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1288,12 +1352,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getUserOrders: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getUserOrders: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1307,7 +1371,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch user orders. ' + errorMessage,
+                        error: `Failed to fetch user orders. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1403,16 +1467,33 @@ export class OrderController {
                 )
             }
 
+            // Get cart products before updating status to restore inventory
+            const cart = order.toJSON().Cart
+            let cartProducts: any[] = []
+            if (cart) {
+                cartProducts = await CartProduct.findAll({
+                    where: { cartId: cart.id },
+                    include: [PriceList],
+                })
+            }
+
             // Update order status to 'Cancelled'
             await order.update({ status: 'Cancelled' })
 
             // Update cart status to 'Cancelled'
-            const cart = order.toJSON().Cart
             if (cart) {
                 await Cart.update(
                     { status: 'Cancelled' },
                     { where: { id: cart.id } },
                 )
+            }
+
+            // Restore inventory for cancelled order
+            if (cartProducts.length > 0) {
+                const productsToRestore = cartProducts.map((cp: any) => ({
+                    priceListId: cp.toJSON().priceListId,
+                }))
+                await this.increaseInventoryForProducts(productsToRestore)
             }
 
             const encryptedResponse = {
@@ -1423,12 +1504,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in cancelOrder: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in cancelOrder: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1442,7 +1523,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to cancel order. ' + errorMessage,
+                        error: `Failed to cancel order. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1656,12 +1737,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in reorder: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in reorder: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1675,7 +1756,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to reorder. ' + errorMessage,
+                        error: `Failed to reorder. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1785,12 +1866,12 @@ export class OrderController {
             // Send PDF buffer
             res.send(pdfBuffer)
         } catch (error) {
-            const cleanMessage =
-                'Error in downloadInvoice: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in downloadInvoice: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1804,7 +1885,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to download invoice. ' + errorMessage,
+                        error: `Failed to download invoice. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1979,12 +2060,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getCoupons: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getCoupons: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1998,7 +2079,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch coupons. ' + errorMessage,
+                        error: `Failed to fetch coupons. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2203,12 +2284,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in saveOrUpdateReview: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in saveOrUpdateReview: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2222,8 +2303,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to save or update review. ' + errorMessage,
+                        error: `Failed to save or update review. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2382,12 +2462,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getAllReviews: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getAllReviews: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2401,7 +2481,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch reviews. ' + errorMessage,
+                        error: `Failed to fetch reviews. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2458,12 +2538,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in getReviewsByProduct: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getReviewsByProduct: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2477,9 +2557,9 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to fetch reviews by product. ' +
-                            errorMessage,
+                        error: `Failed to fetch reviews by product. ${
+                            errorMessage
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2551,12 +2631,12 @@ export class OrderController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in deleteReview: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteReview: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2570,7 +2650,7 @@ export class OrderController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete review. ' + errorMessage,
+                        error: `Failed to delete review. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

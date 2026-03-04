@@ -28,6 +28,7 @@ import {
     Product,
     ProductImage,
     ProductLocation,
+    ProductSearch,
     ReviewProduct,
     Role,
     User,
@@ -43,7 +44,8 @@ export class InventoryController {
     private async checkAdminRole(token: string): Promise<void> {
         try {
             jwt.verify(token, JWT_SECRET)
-        } catch (err) {
+        } catch (error) {
+            error.message = 'Invalid or expired token.'
             throw new Error('Invalid or expired token.')
         }
         const session = await UserSession.findOne({
@@ -93,7 +95,7 @@ export class InventoryController {
                 ? decryptedBody.locationIds
                 : []
 
-            // Execute three separate SELECT statements with JSON array params; fallback to simple selects if not present
+            // Execute three separate SELECT statements with JSON array params fallback to simple selects if not present
             const replacements = {
                 categoryIds: categoryIds.length
                     ? JSON.stringify(categoryIds)
@@ -144,12 +146,12 @@ export class InventoryController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getInventoryFilters: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getInventoryFilters: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -333,12 +335,12 @@ export class InventoryController {
 
             return { response: encryptPayload(row) }
         } catch (error) {
-            const cleanMessage =
-                'Error in getInventoryKPIs: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getInventoryKPIs: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -401,12 +403,12 @@ export class InventoryController {
 
             return { response: encryptPayload(chartData) }
         } catch (error) {
-            const cleanMessage =
-                'Error in getInventoryChartData: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getInventoryChartData: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -453,12 +455,12 @@ export class InventoryController {
             })
             return { response: encryptPayload(categories) }
         } catch (error) {
-            const cleanMessage =
-                'Error in getCategories: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getCategories: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -570,12 +572,12 @@ export class InventoryController {
             }
             return { response: encryptPayload(cat) }
         } catch (error) {
-            const cleanMessage =
-                'Error in createOrUpdateCategory: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createOrUpdateCategory: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -589,9 +591,9 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to create or update category. ' +
-                            errorMessage,
+                        error: `Failed to create or update category. ${
+                            errorMessage
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -690,12 +692,12 @@ export class InventoryController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in deleteCategory: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteCategory: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -709,7 +711,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete category. ' + errorMessage,
+                        error: `Failed to delete category. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -721,27 +723,17 @@ export class InventoryController {
     async getLocations(@Body() body: { request?: string }) {
         try {
             const decryptedBody = decryptPayload(body.request)
-            const {
-                name,
-                floor,
-                room,
-                rack,
-                address,
-                city,
-                state,
-                country,
-                photo,
-            } = decryptedBody as {
-                name?: string
-                floor?: string
-                room?: string
-                rack?: string
-                address?: string
-                city?: string
-                state?: string
-                country?: string
-                photo?: boolean
-            }
+            const { name, floor, room, rack, city, state, country, photo } =
+                decryptedBody as {
+                    name?: string
+                    floor?: string
+                    room?: string
+                    rack?: string
+                    city?: string
+                    state?: string
+                    country?: string
+                    photo?: boolean
+                }
 
             const whereClause: any = {}
             if (name) whereClause.name = { [Op.like]: `%${name}%` }
@@ -766,12 +758,12 @@ export class InventoryController {
 
             return { response: encryptPayload(locations) }
         } catch (error) {
-            const cleanMessage =
-                'Error in getLocations: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getLocations: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -785,7 +777,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch locations. ' + errorMessage,
+                        error: `Failed to fetch locations. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -919,12 +911,12 @@ export class InventoryController {
             }
             return { response: encryptPayload(loc) }
         } catch (error) {
-            const cleanMessage =
-                'Error in createOrUpdateLocation: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createOrUpdateLocation: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -938,9 +930,9 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to create or update location. ' +
-                            errorMessage,
+                        error: `Failed to create or update location. ${
+                            errorMessage
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1038,12 +1030,12 @@ export class InventoryController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in deleteLocation: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteLocation: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1057,7 +1049,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete location. ' + errorMessage,
+                        error: `Failed to delete location. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1074,29 +1066,66 @@ export class InventoryController {
                 name?: string
                 description?: string
                 image?: boolean | null
+                searchText?: string
             }
-            const whereClause: any = {}
-            if (decryptedBody?.name) {
-                whereClause.name = { [Op.like]: `%${decryptedBody.name}%` }
-            }
-            if (decryptedBody?.description) {
-                whereClause.tagline = {
-                    [Op.like]: `%${decryptedBody.description}%`,
-                }
-            }
-            if (
-                decryptedBody?.category &&
-                decryptedBody?.category !== 'All Products' &&
-                Boolean(decryptedBody?.category) === true
-            ) {
-                // Find category by name
-                const categoryObj = await Category.findOne({
-                    where: { category: decryptedBody.category },
+            let whereClause: any = {}
+
+            // If searchText is provided, search in ProductSearch and get products by IDs
+            if (decryptedBody?.searchText) {
+                const searchResults = await ProductSearch.findAll({
+                    where: {
+                        searchText: {
+                            [Op.like]: `%${decryptedBody.searchText}%`,
+                        },
+                    },
+                    order: [['rank', 'ASC']],
                 })
-                if (categoryObj) {
-                    whereClause.categoryid = categoryObj.getDataValue('id')
-                } else {
-                    return { response: encryptPayload([]) }
+                const productIds = searchResults.map((result) =>
+                    result.getDataValue('productId'),
+                )
+                whereClause = {
+                    [Op.or]: [
+                        {
+                            id: {
+                                [Op.in]: productIds,
+                            },
+                        },
+                        {
+                            tagline: {
+                                [Op.like]: `%${decryptedBody.searchText}%`,
+                            },
+                        },
+                        {
+                            name: {
+                                [Op.like]: `%${decryptedBody.searchText}%`,
+                            },
+                        },
+                    ],
+                }
+            } else {
+                // Apply other filters only if searchText is not provided
+                if (decryptedBody?.name) {
+                    whereClause.name = { [Op.like]: `%${decryptedBody.name}%` }
+                }
+                if (decryptedBody?.description) {
+                    whereClause.tagline = {
+                        [Op.like]: `%${decryptedBody.description}%`,
+                    }
+                }
+                if (
+                    decryptedBody?.category &&
+                    decryptedBody?.category !== 'All Products' &&
+                    Boolean(decryptedBody?.category) === true
+                ) {
+                    // Find category by name
+                    const categoryObj = await Category.findOne({
+                        where: { category: decryptedBody.category },
+                    })
+                    if (categoryObj) {
+                        whereClause.categoryid = categoryObj.getDataValue('id')
+                    } else {
+                        return { response: encryptPayload([]) }
+                    }
                 }
             }
             let priceListQuery: any = { model: PriceList }
@@ -1118,6 +1147,7 @@ export class InventoryController {
                         as: 'locations',
                     },
                     { model: ProductImage, order: [['displayOrder', 'ASC']] },
+                    { model: ProductSearch, order: [['rank', 'ASC']] },
                 ],
                 order: [['displayOrder', 'ASC']],
             })
@@ -1136,12 +1166,12 @@ export class InventoryController {
 
             return { response: encryptPayload(products) }
         } catch (error) {
-            const cleanMessage =
-                'Error in getProducts: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getProducts: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1170,6 +1200,7 @@ export class InventoryController {
                 displayOrder,
                 locations,
                 token,
+                productsearches,
             } = decryptedBody as {
                 id?: number
                 name: string
@@ -1191,6 +1222,11 @@ export class InventoryController {
                 displayOrder?: number
                 locations: { locationId: number; quantity: number }[]
                 token: string
+                productsearches?: {
+                    searchText: string
+                    rank: number
+                    id?: number
+                }[]
             }
             if (!name || !categoryid || !Array.isArray(pricelists) || !token) {
                 throw new HttpException(
@@ -1258,6 +1294,7 @@ export class InventoryController {
                             basePrice: pl.basePrice,
                             bomCost: pl.bomCost,
                             quantity: pl.quantity,
+                            isOutOfStock: pl.isOutOfStock,
                         })
                     }
                 } else {
@@ -1267,6 +1304,7 @@ export class InventoryController {
                         basePrice: pl.basePrice,
                         bomCost: pl.bomCost,
                         quantity: pl.quantity,
+                        isOutOfStock: pl.isOutOfStock,
                         productid: product.id,
                     })
                 }
@@ -1402,6 +1440,54 @@ export class InventoryController {
                     })
                 }
             }
+
+            // Handle ProductSearches
+            if (Array.isArray(productsearches)) {
+                // Get existing ProductSearches for the product
+                const existingProductSearches = await ProductSearch.findAll({
+                    where: { productId: product.id },
+                })
+                const existingSearchIds = existingProductSearches.map((ps) =>
+                    ps.getDataValue('id'),
+                )
+
+                // Process incoming productsearches
+                for (const ps of productsearches) {
+                    if (ps.id) {
+                        const existingPS = await ProductSearch.findByPk(ps.id)
+                        if (existingPS) {
+                            // Update existing
+                            await existingPS.update({
+                                searchText: ps.searchText,
+                                rank: ps.rank,
+                            })
+                        }
+                    } else {
+                        // Create new
+                        await ProductSearch.create({
+                            searchText: ps.searchText,
+                            rank: ps.rank,
+                            productId: product.id,
+                        })
+                    }
+                }
+
+                // Delete removed productsearches
+                const incomingSearchIds = productsearches
+                    .filter((ps) => ps.id)
+                    .map((ps) => ps.id)
+                const toDeleteSearchIds = existingSearchIds.filter(
+                    (id) => !incomingSearchIds.includes(id),
+                )
+                if (toDeleteSearchIds.length > 0) {
+                    await ProductSearch.destroy({
+                        where: {
+                            id: toDeleteSearchIds,
+                        },
+                    })
+                }
+            }
+
             const result = await Product.findOne({
                 where: { id: product.id },
                 include: [
@@ -1413,16 +1499,17 @@ export class InventoryController {
                         through: { attributes: ['quantity'] },
                         as: 'locations',
                     },
+                    { model: ProductSearch, order: [['rank', 'ASC']] },
                 ],
             })
             return result
         } catch (error) {
-            const cleanMessage =
-                'Error in saveProduct: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error?.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in saveProduct: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error?.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error?.stack // keep original stack
 
@@ -1478,6 +1565,7 @@ export class InventoryController {
                     unitPrice: number
                     basePrice: number
                     weight: string
+                    isOutOfStock: boolean
                 }[]
                 token: string
             }
@@ -1668,6 +1756,7 @@ export class InventoryController {
                                 unitprice: invoice.unitPrice,
                                 basePrice: invoice.basePrice,
                                 weight: invoice.weight,
+                                isOutOfStock: invoice.isOutOfStock,
                             },
                             { where: { id: invoice.id } },
                         )
@@ -1679,6 +1768,7 @@ export class InventoryController {
                             unitprice: invoice.unitPrice,
                             basePrice: invoice.basePrice,
                             weight: invoice.weight,
+                            isOutOfStock: invoice.isOutOfStock,
                         })
                     }
                 }
@@ -1696,12 +1786,12 @@ export class InventoryController {
 
             return { response: encryptPayload(item) }
         } catch (error) {
-            const cleanMessage =
-                'Error in createOrUpdateItem: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createOrUpdateItem: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1715,8 +1805,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to create or update item. ' + errorMessage,
+                        error: `Failed to create or update item. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1824,12 +1913,12 @@ export class InventoryController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in deleteItem: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteItem: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1843,7 +1932,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete item. ' + errorMessage,
+                        error: `Failed to delete item. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1909,12 +1998,12 @@ export class InventoryController {
 
             return { response: encryptPayload(items) }
         } catch (error) {
-            const cleanMessage =
-                'Error in getItems: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getItems: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1928,7 +2017,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch items. ' + errorMessage,
+                        error: `Failed to fetch items. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2057,6 +2146,11 @@ export class InventoryController {
                 where: { productid: id },
             })
 
+            // Delete product search records
+            await ProductSearch.destroy({
+                where: { productId: id },
+            })
+
             // Delete product
             await product.destroy()
 
@@ -2066,12 +2160,12 @@ export class InventoryController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in deleteProduct: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteProduct: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2085,7 +2179,7 @@ export class InventoryController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete product. ' + errorMessage,
+                        error: `Failed to delete product. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

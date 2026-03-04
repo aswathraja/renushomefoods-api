@@ -18,6 +18,7 @@ import {
     User,
     UserAddress,
 } from '../models/models'
+import { ShippingService } from './shipping.service'
 
 // Register Handlebars helpers
 Handlebars.registerHelper('eq', function (a, b) {
@@ -26,6 +27,8 @@ Handlebars.registerHelper('eq', function (a, b) {
 
 @Injectable()
 export class AppService {
+    constructor(private shippingService: ShippingService) {}
+
     getHello(): string {
         return 'Hello World!'
     }
@@ -180,7 +183,6 @@ export class AppService {
 
             // Calculate coupon discount
             let totalDiscount = 0
-            let shippingDiscount = 0
             const orderCoupons = order.toJSON().OrderCoupons
             if (
                 orderCoupons &&
@@ -234,30 +236,9 @@ export class AppService {
                                             cp.quantity,
                                     0,
                                 )
-                            if (
-                                discount.name === 'Shipping' &&
-                                discount.flatrate
-                            ) {
-                                shippingDiscount = 99 - discount.discount
-                            } else if (
-                                discount.name === 'Shipping' &&
-                                discount.flatrate === false
-                            ) {
-                                shippingDiscount =
-                                    99 - 99 * (discount.discount / 100)
-                            }
                         } else {
                             discountAmount =
                                 applicableSubtotal * (discount.discount / 100)
-                        }
-
-                        if (discount.name === 'Shipping' && discount.flatrate) {
-                            shippingDiscount = 99 - discount.discount
-                        } else if (
-                            discount.name === 'Shipping' &&
-                            discount.flatrate === false
-                        ) {
-                            shippingDiscount = 99 * (discount.discount / 100)
                         }
                     }
                     if (discount.name !== 'Shipping') {
@@ -269,42 +250,47 @@ export class AppService {
             // Adjust subtotal after discount
             const adjustedSubtotal = subtotal - totalDiscount
 
-            // Determine shipping based on adjusted subtotal
-            let shipping: string | boolean
+            // Calculate order weight from cart products
+            const cartProducts = order.toJSON().Cart.CartProducts
+            const orderWeight = this.shippingService.calculateOrderWeight(
+                cartProducts.map((cp) => ({
+                    weight: cp.PriceList?.weight || '0g',
+                    quantity: cp.quantity,
+                })),
+            )
+
+            // Get pincode from shipping address
+            const pincode = order.toJSON().UserAddress?.pincode || ''
+            const shippingMethod = order.toJSON().shippingMethod
+
+            // Get shipping discount from coupons
+            let shippingDiscountObj = null
             if (
-                subtotal < 999 &&
-                order.toJSON().shippingMethod === 'Home Delivery'
+                orderCoupons &&
+                orderCoupons.length > 0 &&
+                orderCoupons[0]?.CouponCode?.CouponDiscounts?.length > 0
             ) {
-                // Check for shipping discount
-                let shippingDiscount = 0
-                let isShippingFlatrate = false
-                if (
-                    orderCoupons &&
-                    orderCoupons.length > 0 &&
-                    orderCoupons[0]?.CouponCode?.CouponDiscounts?.length > 0
-                ) {
-                    const couponDiscounts =
-                        orderCoupons[0].CouponCode.CouponDiscounts
-                    const shippingDiscountObj = couponDiscounts.find(
-                        (d) => d.name === 'Shipping',
-                    )
-                    if (shippingDiscountObj) {
-                        if (shippingDiscountObj.flatrate) {
-                            shippingDiscount = shippingDiscountObj.discount
-                            isShippingFlatrate = true
-                        } else {
-                            shippingDiscount =
-                                99 * (shippingDiscountObj.discount / 100)
-                        }
-                    }
-                }
-                const shippingCost = isShippingFlatrate
-                    ? shippingDiscount
-                    : 99 - shippingDiscount
-                shipping =
-                    shippingCost > 0
-                        ? `₹${shippingCost.toFixed(2)}`
-                        : '<strong>Free</strong>'
+                const couponDiscounts =
+                    orderCoupons[0].CouponCode.CouponDiscounts
+                shippingDiscountObj = couponDiscounts.find(
+                    (d) => d.name === 'Shipping',
+                )
+            }
+
+            // Calculate shipping using the new shipping service
+            const shippingDetails = this.shippingService.getShippingDetails(
+                pincode,
+                orderWeight,
+                shippingMethod,
+                shippingDiscountObj,
+            )
+
+            // Format shipping for display
+            let shipping: string | boolean
+            if (shippingDetails.isFree && shippingDetails.baseCost > 0) {
+                shipping = '<strong>Free</strong>'
+            } else if (shippingDetails.finalCost > 0) {
+                shipping = `₹${shippingDetails.finalCost.toFixed(2)}`
             } else {
                 shipping = '<strong>Free</strong>'
             }
@@ -450,12 +436,12 @@ export class AppService {
             logger.info(`✅ PDF generated for order ${orderId}`)
             return Buffer.from(pdfBuffer)
         } catch (error) {
-            const cleanMessage =
-                'Error in generateOrderInvoicePDF: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in generateOrderInvoicePDF: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -505,12 +491,12 @@ export class AppService {
             logger.info('✅ Email sent')
             return { success: true, messageId: info.messageId }
         } catch (error) {
-            const cleanMessage =
-                'Error in sendMail: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in sendMail: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 

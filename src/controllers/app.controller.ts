@@ -103,12 +103,12 @@ export class AppController {
             })
             return { response: encryptPayload(msg) }
         } catch (error) {
-            const cleanMessage =
-                'Error in createMessage: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createMessage: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 

@@ -118,12 +118,12 @@ export class UserController {
                 response: encryptPayload({ identifier }),
             }
         } catch (error: any) {
-            const cleanMessage =
-                'Error in validateUser: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in validateUser: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -135,7 +135,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to validate user. ' + error?.message,
+                        error: `Failed to validate user. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -211,12 +211,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in register: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in register: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -231,9 +231,7 @@ export class UserController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error:
-                                'Duplicate entry. ' +
-                                error.errors.map((e: any) => e.path),
+                            error: `Duplicate entry. ${error.errors.map((e: any) => e.path).join(', ')}`,
                         }),
                     },
                     HttpStatus.BAD_REQUEST,
@@ -243,7 +241,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to register user. ' + error?.message,
+                        error: `Failed to register user. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -345,16 +343,16 @@ export class UserController {
             await user.update({ name, username, email, phone })
 
             const encryptedResponse = {
-                response: encryptPayload({ status: 'ok', user: user }),
+                response: encryptPayload({ status: 'ok', user }),
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in update: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in update: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -366,7 +364,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to update user. ' + error?.message,
+                        error: `Failed to update user. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -472,18 +470,18 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in checkAvailability: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in checkAvailability: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
             if (error instanceof HttpException) {
                 const response = error.getResponse() as any
                 const supress: boolean = response.supress
-                if (Boolean(supress) === false) {
+                if (!supress) {
                     logger.error(err)
                 } else {
                     logger.info(
@@ -502,8 +500,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to check availability. ' + error?.message,
+                        error: `Failed to check availability. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -594,7 +591,7 @@ export class UserController {
                 await user.update({ otp: newOTP })
             }
             const encryptedIdentifier = encryptPayload({
-                identifier: identifier,
+                identifier,
             })
             // Send OTP email
             await this.appService.sendMail({
@@ -618,12 +615,12 @@ export class UserController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in forgotPassword: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in forgotPassword: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -635,9 +632,9 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to process forgot password request. ' +
-                            error.message,
+                        error: `Failed to process forgot password request. ${
+                            error.message
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -738,12 +735,12 @@ export class UserController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in resetPassword: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in resetPassword: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -755,7 +752,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to reset password. ' + error.message,
+                        error: `Failed to reset password. ${error.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -861,12 +858,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in getDetails: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getDetails: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -889,8 +886,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to fetch user details. ' + error?.message,
+                        error: `Failed to fetch user details. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -968,7 +964,7 @@ export class UserController {
             if (user.toJSON().password === '') {
                 const otp = this.appService.generateRandomNumber(4)
                 await user.update({
-                    otp: otp,
+                    otp,
                 })
                 const updatedUser = await User.findOne({
                     where: {
@@ -1075,12 +1071,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in login: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in login: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1091,7 +1087,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to login. ' + error?.message,
+                        error: `Failed to login. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1178,7 +1174,7 @@ export class UserController {
                     prevToken: session.toJSON().token,
                     expiry: new Date(now.getTime() + 24 * 60 * 60 * 1000), // 1 day from now
                 })
-            } else if (session.toJSON().token != session.toJSON().prevToken) {
+            } else if (session.toJSON().token !== session.toJSON().prevToken) {
                 await session.update({
                     prevToken: session.toJSON().token,
                     expiry: new Date(now.getTime() + 24 * 60 * 60 * 1000), // 1 day from now
@@ -1261,7 +1257,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to logout. ' + errorMessage,
+                        error: `Failed to logout. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1348,12 +1344,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in getDefaultAddress: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getDefaultAddress: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1376,8 +1372,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to get default address. ' + error?.message,
+                        error: `Failed to get default address. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1499,7 +1494,7 @@ export class UserController {
                 const encryptedResponse = {
                     response: encryptPayload({
                         status: 'ok',
-                        address: address,
+                        address,
                     }),
                 }
                 return encryptedResponse
@@ -1534,12 +1529,12 @@ export class UserController {
                 return encryptedResponse
             }
         } catch (error: any) {
-            const cleanMessage =
-                'Error in createOrUpdateAddress: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createOrUpdateAddress: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1562,9 +1557,9 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to create or update address. ' +
-                            error?.message,
+                        error: `Failed to create or update address. ${
+                            error?.message
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1647,12 +1642,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in getAddresses: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getAddresses: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1675,7 +1670,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to get addresses. ' + error?.message,
+                        error: `Failed to get addresses. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1788,12 +1783,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in changePassword: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in changePassword: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1816,7 +1811,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to change password. ' + error?.message,
+                        error: `Failed to change password. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1917,7 +1912,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to get user roles. ' + error?.message,
+                        error: `Failed to get user roles. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1978,7 +1973,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to update user roles. ' + error?.message,
+                        error: `Failed to update user roles. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2105,12 +2100,12 @@ export class UserController {
             }
             return encryptedResponse
         } catch (error: any) {
-            const cleanMessage =
-                'Error in deleteAddress: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteAddress: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2133,7 +2128,7 @@ export class UserController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete address. ' + error?.message,
+                        error: `Failed to delete address. ${error?.message}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

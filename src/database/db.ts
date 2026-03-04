@@ -10,12 +10,12 @@ export async function connectToDatabase() {
         await sequelize.sync() // Sync models with the database
         logger.info('Connection has been established successfully.')
     } catch (error) {
-        const cleanMessage =
-            'Unable to connect to the database: ' +
-            (error?.original?.sqlMessage ||
-                error?.parent?.sqlMessage ||
-                error.message ||
-                'Unknown error')
+        const cleanMessage = `Unable to connect to the database: ${
+            error?.original?.sqlMessage ||
+            error?.parent?.sqlMessage ||
+            error.message ||
+            'Unknown error'
+        }`
         const err = new Error(cleanMessage)
         err.stack = error.stack // keep original stack
 

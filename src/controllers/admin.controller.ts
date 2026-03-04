@@ -51,6 +51,52 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 export class AdminController {
     constructor(private appService: AppService) {}
 
+    // Helper method to reduce PriceList quantity by 1 for each product in the order
+    // Only reduces if quantity > 0
+    private async reduceInventoryForProducts(products: any[]): Promise<void> {
+        for (const prod of products) {
+            try {
+                const priceList = await PriceList.findByPk(prod.priceListId)
+                if (priceList && priceList.toJSON().quantity > 0) {
+                    const currentQuantity = priceList.toJSON().quantity
+                    await priceList.update({
+                        quantity: currentQuantity - 1,
+                    })
+                    logger.info(
+                        `Reduced quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity - 1}`,
+                    )
+                }
+            } catch (error) {
+                logger.error(
+                    `Failed to reduce inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
+            }
+        }
+    }
+
+    // Helper method to increase PriceList quantity by 1 for each product in the order
+    // Called when order is cancelled to restore inventory
+    private async increaseInventoryForProducts(products: any[]): Promise<void> {
+        for (const prod of products) {
+            try {
+                const priceList = await PriceList.findByPk(prod.priceListId)
+                if (priceList) {
+                    const currentQuantity = priceList.toJSON().quantity || 0
+                    await priceList.update({
+                        quantity: currentQuantity + 1,
+                    })
+                    logger.info(
+                        `Increased quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity + 1} (order cancelled)`,
+                    )
+                }
+            } catch (error) {
+                logger.error(
+                    `Failed to increase inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
+            }
+        }
+    }
+
     // Common function to authenticate if the user has admin role (roleId 1)
     async authenticateAdmin(authHeader: string): Promise<any> {
         // Extract token from Authorization header
@@ -182,26 +228,26 @@ export class AdminController {
             let adjustedToEndDate = toEndDate
             if (fromStartDate) {
                 adjustedFromStartDate = new Date(
-                    fromStartDate + 'T00:00:00.000Z',
+                    `${fromStartDate}T00:00:00.000Z`,
                 )
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (toStartDate) {
-                adjustedToStartDate = new Date(toStartDate + 'T23:59:59.999Z')
+                adjustedToStartDate = new Date(`${toStartDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (fromEndDate) {
-                adjustedFromEndDate = new Date(fromEndDate + 'T00:00:00.000Z')
+                adjustedFromEndDate = new Date(`${fromEndDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (toEndDate) {
-                adjustedToEndDate = new Date(toEndDate + 'T23:59:59.999Z')
+                adjustedToEndDate = new Date(`${toEndDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
@@ -257,12 +303,12 @@ export class AdminController {
                 response: encryptPayload({ adCampaigns }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getAllAdCampaigns: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getAllAdCampaigns: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -275,7 +321,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch AdCampaigns. ' + errorMessage,
+                        error: `Failed to fetch AdCampaigns. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -332,12 +378,12 @@ export class AdminController {
                 response: encryptPayload({ adCampaign }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getAdCampaignById: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getAdCampaignById: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -350,8 +396,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to fetch AdCampaign by id. ' + errorMessage,
+                        error: `Failed to fetch AdCampaign by id. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -533,12 +578,12 @@ export class AdminController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in saveOrUpdateAdCampaign: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in saveOrUpdateAdCampaign: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -551,9 +596,9 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to save or update AdCampaign. ' +
-                            errorMessage,
+                        error: `Failed to save or update AdCampaign. ${
+                            errorMessage
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -622,12 +667,12 @@ export class AdminController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in deleteAdCampaign: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in deleteAdCampaign: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -640,7 +685,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to delete AdCampaign. ' + errorMessage,
+                        error: `Failed to delete AdCampaign. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -663,12 +708,12 @@ export class AdminController {
                 response: encryptPayload({ roles }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getRoles: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getRoles: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -682,7 +727,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch roles. ' + errorMessage,
+                        error: `Failed to fetch roles. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -762,12 +807,12 @@ export class AdminController {
                 response: encryptPayload({ user: user.toJSON() }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getUserDetails: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getUserDetails: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -781,7 +826,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch user details. ' + errorMessage,
+                        error: `Failed to fetch user details. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -814,13 +859,13 @@ export class AdminController {
             let adjustedFromDate = fromDate
             let adjustedToDate = toDate
             if (fromDate) {
-                adjustedFromDate = new Date(fromDate + 'T00:00:00.000Z')
+                adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (toDate) {
-                adjustedToDate = new Date(toDate + 'T23:59:59.999Z')
+                adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
@@ -857,12 +902,12 @@ export class AdminController {
                 response: encryptPayload(response),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getDashboardKPIs: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getDashboardKPIs: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -875,8 +920,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to fetch dashboard KPIs. ' + errorMessage,
+                        error: `Failed to fetch dashboard KPIs. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -909,13 +953,13 @@ export class AdminController {
             let adjustedFromDate = fromDate
             let adjustedToDate = toDate
             if (fromDate) {
-                adjustedFromDate = new Date(fromDate + 'T00:00:00.000Z')
+                adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (toDate) {
-                adjustedToDate = new Date(toDate + 'T23:59:59.999Z')
+                adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
@@ -999,12 +1043,12 @@ export class AdminController {
                 response: encryptPayload(chartData),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getChartData: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getChartData: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1017,7 +1061,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch chart data. ' + errorMessage,
+                        error: `Failed to fetch chart data. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1050,13 +1094,13 @@ export class AdminController {
             let adjustedFromDate = fromDate
             let adjustedToDate = toDate
             if (fromDate) {
-                adjustedFromDate = new Date(fromDate + 'T00:00:00.000Z')
+                adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (toDate) {
-                adjustedToDate = new Date(toDate + 'T23:59:59.999Z')
+                adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
@@ -1143,12 +1187,12 @@ export class AdminController {
                 response: encryptPayload({ orders }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in fetchOrders: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in fetchOrders: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1161,7 +1205,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch orders. ' + errorMessage,
+                        error: `Failed to fetch orders. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1184,12 +1228,12 @@ export class AdminController {
                 response: encryptPayload({ users }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getUsers: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getUsers: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1202,7 +1246,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to fetch users. ' + errorMessage,
+                        error: `Failed to fetch users. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1229,62 +1273,7 @@ export class AdminController {
                 roles, // roles array of role IDs
             } = decryptedBody
 
-            // Build where clause for User attributes dynamically
-            const userWhere: any = {}
-            if (name) {
-                userWhere.name = { [Op.like]: `%${name}%` }
-            }
-            if (phone) {
-                userWhere.phone = { [Op.like]: `%${phone}%` }
-            }
-            if (email) {
-                userWhere.email = { [Op.like]: `%${email}%` }
-            }
-
-            // Build role filtering condition if roles supplied
-            let roleWhere = undefined
-            if (Array.isArray(roles) && roles.length > 0) {
-                roleWhere = { id: { [Op.or]: roles } }
-            }
-
-            // Option A: Fetch users with filters, default address, and roles via Sequelize ORM
-            /*
-            const users = await User.findAll({
-                where: userWhere,
-                attributes: ['id', 'name', 'phone', 'email'],
-                include: [
-                    {
-                        model: UserAddress,
-                        as: 'UserAddresses',
-                        where: { isDefault: true },
-                        attributes: [
-                            'id',
-                            'name',
-                            'addressLine1',
-                            'city',
-                            'state',
-                            'country',
-                            'pincode',
-                            'phone',
-                            'isDefault',
-                        ],
-                        required: false,
-                    },
-                    {
-                        model: Role,
-                        as: 'roles',
-                        through: { attributes: [] },
-                        where: roleWhere,
-                        required: roleWhere ? true : false,
-                    },
-                ],
-            })
-            return {
-                response: encryptPayload({ users }),
-            }
-            */
-
-            // Option B: Call stored procedure to get filtered users (preferred for performance)
+            // Call stored procedure to get filtered users (preferred for performance)
             // Convert roles array to CSV string
             const roleIds = Array.isArray(roles) ? roles.join(',') : ''
 
@@ -1304,12 +1293,12 @@ export class AdminController {
                 response: encryptPayload({ users: results }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getUsersWithDefaultAddress: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getUsersWithDefaultAddress: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -1322,9 +1311,9 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to fetch users with default address. ' +
-                            errorMessage,
+                        error: `Failed to fetch users with default address. ${
+                            errorMessage
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1360,12 +1349,12 @@ export class AdminController {
                 response: encryptPayload({ addresses }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in getUserAddresses: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in getUserAddresses: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1378,8 +1367,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to fetch user addresses. ' + errorMessage,
+                        error: `Failed to fetch user addresses. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1436,8 +1424,9 @@ export class AdminController {
                     username: customerPhone,
                     email:
                         customerEmail ||
-                        customerName.toLowerCase().replace(/\s+/gim, '') +
-                            '@renushomefoods.com', // Assuming email not provided
+                        `${customerName
+                            .toLowerCase()
+                            .replace(/\s+/gim, '')}@renushomefoods.com`, // Assuming email not provided
                     phone: customerPhone,
                     password: '',
                     otp,
@@ -1620,6 +1609,9 @@ export class AdminController {
                 isOrderDelivered =
                     order.toJSON().status !== orderStatus &&
                     orderStatus === 'Delivered'
+                const isOrderCancelled =
+                    order.toJSON().status !== orderStatus &&
+                    orderStatus === 'Cancelled'
                 await order.update({
                     userId: user.id,
                     userAddressId: address.toJSON().id,
@@ -1627,12 +1619,17 @@ export class AdminController {
                     notes: notes || '', // Assuming no notes
                     deliveryNote: deliveryNote || '',
                     shippingMethod,
-                    paymentMethod: paymentMethod, // Assuming default
+                    paymentMethod, // Assuming default
                     status: orderStatus,
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                 })
                 isNewOrder = false
+                // Restore inventory when order is cancelled
+                if (isOrderCancelled) {
+                    await this.increaseInventoryForProducts(products)
+                }
+
                 // Handle couponId: save or update in OrderCoupon table
                 const existingOrderCoupon = await OrderCoupon.findOne({
                     where: { orderId: order.toJSON().id },
@@ -1661,7 +1658,7 @@ export class AdminController {
                     notes: notes || '',
                     deliveryNote: deliveryNote || '',
                     shippingMethod,
-                    paymentMethod: paymentMethod,
+                    paymentMethod,
                     status: orderStatus,
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
@@ -1688,6 +1685,13 @@ export class AdminController {
                             couponCodeId: couponId,
                         })
                     }
+                }
+                // Reduce inventory for new orders with status 'Payment Processed' or 'Ordered'
+                if (
+                    orderStatus === 'Payment Processed' ||
+                    orderStatus === 'Ordered'
+                ) {
+                    await this.reduceInventoryForProducts(products)
                 }
             }
             if (isProductsModified === true || isNewOrder === true) {
@@ -1729,12 +1733,10 @@ export class AdminController {
                 const orderInvoiceData =
                     await this.appService.getOrderInvoiceData(
                         order.toJSON().id,
-                        'We have shipped order, you should recieve your order as per our shipping policy with estimated delivery by <strong>' +
-                            this.appService.formatDate(
-                                new Date(order.toJSON().expectedDeliveryDate),
-                                false,
-                            ) +
-                            '</strong>. Please find the invoice below',
+                        `We have shipped order, you should recieve your order as per our shipping policy with estimated delivery by <strong>${this.appService.formatDate(
+                            new Date(order.toJSON().expectedDeliveryDate),
+                            false,
+                        )}</strong>. Please find the invoice below`,
                     )
                 // Send order invoice email to user
                 await this.appService.sendMail({
@@ -1769,12 +1771,12 @@ export class AdminController {
             }
             return encryptedResponse
         } catch (error) {
-            const cleanMessage =
-                'Error in createOrUpdateOrder: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createOrUpdateOrder: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -1787,8 +1789,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to create or update order. ' + errorMessage,
+                        error: `Failed to create or update order. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2035,12 +2036,12 @@ export class AdminController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in createCoupon: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in createCoupon: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2053,7 +2054,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to create coupon. ' + errorMessage,
+                        error: `Failed to create coupon. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2333,12 +2334,12 @@ export class AdminController {
             }
         } catch (error) {
             await transaction.rollback()
-            const cleanMessage =
-                'Error in saveUser: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in saveUser: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack // keep original stack
 
@@ -2351,7 +2352,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to save or update user. ' + errorMessage,
+                        error: `Failed to save or update user. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2381,6 +2382,7 @@ export class AdminController {
             try {
                 jwt.verify(token, JWT_SECRET)
             } catch (err) {
+                err.message = 'Invalid or expired token.'
                 throw new HttpException(
                     {
                         error: encryptPayload({
@@ -2484,8 +2486,7 @@ export class AdminController {
                         logo: 'https://renushomefoods.com/static/logo.png',
                         userName: user.name,
                         message,
-                        campaignImage:
-                            process.env.WEB_HOST + '/static' + imagePath,
+                        campaignImage: `${process.env.WEB_HOST}/static${imagePath}`,
                         imageURL,
                     },
                 })
@@ -2499,12 +2500,12 @@ export class AdminController {
                 }),
             }
         } catch (error) {
-            const cleanMessage =
-                'Error in sendAdCampaignEmails: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in sendAdCampaignEmails: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -2517,9 +2518,9 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error:
-                            'Failed to send ad campaign emails. ' +
-                            errorMessage,
+                        error: `Failed to send ad campaign emails. ${
+                            errorMessage
+                        }`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -2554,13 +2555,13 @@ export class AdminController {
             let adjustedFromDate = fromDate
             let adjustedToDate = toDate
             if (fromDate) {
-                adjustedFromDate = new Date(fromDate + 'T00:00:00.000Z')
+                adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
             }
             if (toDate) {
-                adjustedToDate = new Date(toDate + 'T23:59:59.999Z')
+                adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
                     .replace('T', ' ')
@@ -2793,7 +2794,7 @@ export class AdminController {
                     customerName: order.customerName,
                     customerPhone: order.customerPhone,
                     customerEmail: order.customerEmail,
-                    deliveryAddress: deliveryAddress,
+                    deliveryAddress,
                     city: order.city,
                     state: order.state,
                     pincode: order.pincode,
@@ -2857,16 +2858,14 @@ export class AdminController {
                                 const fulfilledPercent =
                                     (value.fulfilledQuantity / totalQuantity) *
                                     100
-                                const percentage =
-                                    pendingPercent.toFixed(2) +
-                                    '% Pending, ' +
-                                    fulfilledPercent.toFixed(2) +
-                                    '% Fulfilled'
+                                const percentage = `${pendingPercent.toFixed(
+                                    2,
+                                )}% Pending, ${fulfilledPercent.toFixed(2)}% Fulfilled`
                                 chartSheet.addRow({
                                     chartType: chartTypeKeyMap[chartKey],
                                     category: value.product,
                                     value: `Pending: ${value.pendingQuantity}, Fulfilled: ${value.fulfilledQuantity}`,
-                                    percentage: percentage,
+                                    percentage,
                                 })
                             } else {
                                 // For other chart types, determine the structure
@@ -2882,19 +2881,19 @@ export class AdminController {
                                     0
                                 chartSheet.addRow({
                                     chartType: chartTypeKeyMap[chartKey],
-                                    category: category,
+                                    category,
                                     value:
                                         typeof chartValue === 'number'
-                                            ? '₹' + chartValue.toFixed(2)
+                                            ? `₹${chartValue.toFixed(2)}`
                                             : chartValue,
                                     percentage:
                                         chartValue && totalChartValue
-                                            ? (
+                                            ? `${(
                                                   (chartValue /
                                                       totalChartValue) *
                                                   100
-                                              ).toFixed(2) + '%'
-                                            : 0 + '%',
+                                              ).toFixed(2)}%`
+                                            : `${0}%`,
                                 })
                             }
                         })
@@ -2925,12 +2924,12 @@ export class AdminController {
             await workbook.xlsx.write(res)
             res.end()
         } catch (error) {
-            const cleanMessage =
-                'Error in exportExcelData: ' +
-                (error?.original?.sqlMessage ||
-                    error?.parent?.sqlMessage ||
-                    error.message ||
-                    'Unknown error')
+            const cleanMessage = `Error in exportExcelData: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
             const err = new Error(cleanMessage)
             err.stack = error.stack
 
@@ -2943,7 +2942,7 @@ export class AdminController {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: 'Failed to export Excel data. ' + errorMessage,
+                        error: `Failed to export Excel data. ${errorMessage}`,
                     }),
                 },
                 HttpStatus.INTERNAL_SERVER_ERROR,

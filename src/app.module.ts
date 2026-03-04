@@ -6,6 +6,7 @@ import { OrderController } from './controllers/order.controller'
 import { UserController } from './controllers/user.controller'
 import { connectToDatabase } from './database/db'
 import { AppService } from './services/app.service'
+import { ShippingService } from './services/shipping.service'
 
 @Module({
     imports: [
@@ -22,7 +23,7 @@ import { AppService } from './services/app.service'
         OrderController,
         InventoryController,
     ],
-    providers: [AppService],
+    providers: [AppService, ShippingService],
 })
 export class AppModule implements OnModuleInit {
     async onModuleInit() {

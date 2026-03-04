@@ -423,6 +423,7 @@ Product.init(
 export class PriceList extends Model {
     public readonly createdAt!: Date
     public readonly updatedAt!: Date
+    public isOutOfStock!: boolean
 }
 
 PriceList.init(
@@ -460,6 +461,11 @@ PriceList.init(
         quantity: {
             type: DataTypes.INTEGER.UNSIGNED,
             allowNull: true,
+        },
+        isOutOfStock: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
         },
         createdAt: {
             type: DataTypes.DATE,
@@ -536,6 +542,59 @@ Product.hasMany(PriceList, { foreignKey: 'productid' })
 PriceList.belongsTo(Product, { foreignKey: 'productid' })
 Product.hasMany(ProductImage, { foreignKey: 'productId' })
 ProductImage.belongsTo(Product, { foreignKey: 'productId' })
+
+// ProductSearch Model - stores search keywords for products with ranking
+export class ProductSearch extends Model {
+    public readonly createdAt!: Date
+    public readonly updatedAt!: Date
+}
+
+ProductSearch.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true,
+        },
+        searchText: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+        rank: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            defaultValue: null,
+        },
+        productId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false,
+            references: {
+                model: Product,
+                key: 'id',
+            },
+            onDelete: 'CASCADE',
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+    },
+    {
+        sequelize,
+        tableName: 'productsearches',
+        timestamps: true,
+    },
+)
+
+// Set up associations for ProductSearch
+Product.hasMany(ProductSearch, { foreignKey: 'productId' })
+ProductSearch.belongsTo(Product, { foreignKey: 'productId' })
 
 // Cart Model
 export class Cart extends Model {}
@@ -1274,6 +1333,7 @@ export class ItemInvoice extends Model {
     public itemId!: number
     public price!: number
     public quantity!: number
+    public isOutOfStock!: boolean
 }
 
 ItemInvoice.init(
@@ -1311,6 +1371,11 @@ ItemInvoice.init(
         quantity: {
             type: DataTypes.INTEGER,
             allowNull: false,
+        },
+        isOutOfStock: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
         },
     },
     {
