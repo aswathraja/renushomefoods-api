@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 250">
+  <!-- Chef Hat - Main Shape -->
+  <g fill="#F2F3F1">
+    <path d="M87 180 L87 95 Q87 50 120 50 Q153 50 153 95 L153 180 Q175 195 200 180 L200 195 Q225 180 263 195 L263 180 Q263 100 200 85 Q137 100 87 180Z"/>
+  </g>
+  <!-- Hat Band -->
+  <g fill="#36504E">
+    <rect x="87" y="170" width="176" height="15" rx="3"/>
+  </g>
+  <!-- Hat Details -->
+  <g fill="#4D655F">
+    <ellipse cx="175" cy="120" rx="45" ry="35"/>
+    <path d="M130 120 Q130 80 175 75 Q220 80 220 120 Q220 100 175 95 Q130 100 130 120Z" fill="#F2F3F1"/>
+  </g>
+</svg>
