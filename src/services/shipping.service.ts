@@ -54,7 +54,7 @@ export class ShippingService {
     /**
      * Calculate shipping cost based on pincode and weight
      *
-     * Chennai Local (600000-699999): <500g = ₹50, >=500g = ₹99
+     * Chennai Local (600000-600300): <500g = ₹50, >=500g = ₹99
      * All Other: <500g = ₹149, >=500g = ₹199
      * Free Store Pickup: ₹0
      */
@@ -78,8 +78,8 @@ export class ShippingService {
             return 0
         }
 
-        // Check if local zone (Chennai - 600000 to 699999)
-        const isLocalZone = pincodeNum >= 600000 && pincodeNum <= 699999
+        // Check if local zone (Chennai - 600000 to 600300)
+        const isLocalZone = pincodeNum >= 600000 && pincodeNum <= 600300
 
         // Check if heavy (>= 500g)
         const isHeavy = weightInGrams >= 500
@@ -191,7 +191,7 @@ export class ShippingService {
         if (
             !isNaN(pincodeNum) &&
             pincodeNum >= 600000 &&
-            pincodeNum <= 699999
+            pincodeNum <= 600300
         ) {
             zone = 'Chennai Local'
         }

@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Renu's Home Foods - Order Invoice {{orderId}}</title>
   <style>
+    .my-2px {
+      margin-top: 2px;
+      margin-bottom: 2px;
+    }
     body {
       margin: 0;
       padding: 0;
@@ -46,8 +50,8 @@
       background-color: #ffffff; /* White inner box */
       border: 2px solid #8b5e3c; /* Elegant brown border */
       border-radius: 10px;
-      padding: 30px 40px;
-      margin: 0 auto 20px;
+      padding: 25px 45px;
+      margin: 0 33px 20px;
       font-size: 17px;
       color: #333333;
       line-height: 1.8;
@@ -90,13 +94,12 @@
       background-color: #ffffff;
       border: 2px solid #8b5e3c;
       border-radius: 10px;
-      padding: 15px;
+      padding: 20px;
       width: 48%;
       font-size: 15px;
       color: #333333;
       line-height: 1.6;
       text-align: right;
-      height:fit-content;
     }
 
     .order-details p {
@@ -158,7 +161,7 @@
       border: 2px solid #8b5e3c;
       border-radius: 10px;
       padding: 20px;
-      margin: 0 auto 20px;
+      margin: 0 30px 20px;
       max-width: 92%;
       text-align: right;
       font-size: 16px;
@@ -176,10 +179,10 @@
 
     .footer {
       text-align: center;
-      padding: 20px;
+      padding: 5px 20px;
       font-size: 13px;
-      color: #888888;
-      border-top: 1px solid #e0e0e0;
+      color: #c29470;
+      border-top: 1px solid #d7baa5;
       background-color: #fdf7ee;
     }
 
@@ -233,6 +236,13 @@
 
       .invoice-header {
         font-size:16px !important;
+        text-align: center !important;
+        font-weight: 700 !important;
+        display:flex !important;
+        align-self: center;
+        justify-content: center;
+        justify-self: center;
+        margin-bottom: 20px !important;
       }
       .message-box, .address-box, .totals, .seller-details, .order-details {
         font-size: 11px !important;
@@ -259,7 +269,7 @@
         <strong>Greating from Renu's Home Foods</strong><br/> <br/>
         {{{message}}}
       </div>
-      <div style="text-align: center;" class="invoice-header"><strong>Invoice</strong></div><br/> <br/>
+      <div class="invoice-header" style="text-align: center; font-weight: bolder;margin-bottom: 20px;">Invoice</div>
       <div class="details-row">
         <div class="seller-details">
           <h3>Seller Details</h3>
@@ -286,14 +296,14 @@
         <div class="address-box">
           <h3>Billing Address</h3>
           {{{billingAddress}}}
-          <p style="margin: 2px 0;"><strong>Email:</strong> {{billingEmail}}</p>
-          <p style="margin: 2px 0;"><strong>Phone:</strong> {{billingPhone}}</p>
+          <p class="my-2px"><strong>Email:</strong> {{billingEmail}}</p>
+          <p class="my-2px"><strong>Phone:</strong> {{billingPhone}}</p>
         </div>
         <div class="address-box shipping">
           <h3>Shipping Address</h3>
           {{{shippingAddress}}}
-          <p style="margin: 2px 0;"><strong>Email:</strong> {{shippingEmail}}</p>
-          <p style="margin: 2px 0;"><strong>Phone:</strong> {{shippingPhone}}</p>
+          <p class="my-2px"><strong>Email:</strong> {{shippingEmail}}</p>
+          <p class="my-2px"><strong>Phone:</strong> {{shippingPhone}}</p>
         </div>
       </div>
       <table class="items-table">
@@ -301,6 +311,7 @@
           <tr>
             <th>Item</th>
             <th>Quantity</th>
+            <th>Weight</th>
             <th>Price</th>
             <th>Total</th>
           </tr>
@@ -310,6 +321,7 @@
           <tr>
             <td>{{name}}</td>
             <td>{{quantity}}</td>
+            <td>{{weight}}</td>
             <td>₹{{price}}</td>
             <td>₹{{total}}</td>
           </tr>
@@ -318,8 +330,8 @@
       </table>
       <div class="totals">
         <p><strong>Subtotal: ₹{{subtotal}}</strong></p>
-        {{#if totalDiscount}}<p>Discount: -₹{{totalDiscount}}</p>{{/if}}
-        {{#if shipping}}<p>Shipping: {{{shipping}}}</p>{{/if}}
+        {{#if totalDiscount}}<p>Discount{{#if couponCode}} (Code: {{couponCode}}){{/if}}: -₹{{totalDiscount}}</p>{{/if}}
+        {{#if shipping}}<p>Shipping{{#if couponCode}} (Code: {{couponCode}}){{/if}}: {{{shipping}}}</p>{{/if}}
         <p class="total">Total: ₹{{total}}</p>
       </div>
       <div class="footer">

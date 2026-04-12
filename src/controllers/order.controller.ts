@@ -327,12 +327,16 @@ export class OrderController {
             }
             const encryptedResponse = {
                 response: encryptPayload({
-                    cartId: cart?.id,
-                    order: orderObj,
-                    products,
-                    totalDiscount,
-                    shippingDiscount,
-                    couponCode,
+                    orders: [
+                        {
+                            cartId: cart?.id,
+                            order: orderObj,
+                            products,
+                            totalDiscount,
+                            shippingDiscount,
+                            couponCode,
+                        },
+                    ],
                 }),
             }
             return encryptedResponse
@@ -650,7 +654,7 @@ export class OrderController {
                     updatedBy: createdBy,
                     createdAt: new Date(),
                     updatedAt: new Date(),
-                    status: 'Created',
+                    status: status || 'Created',
                 })
                 const createdProdcts = []
                 // Create CartProducts
@@ -895,18 +899,6 @@ export class OrderController {
                     )
                 }
             } else {
-                // Create new address
-                userAddress = await UserAddress.create({
-                    userId: user.toJSON().id,
-                    name,
-                    addressLine1: address,
-                    city,
-                    state,
-                    country, // Assuming default
-                    pincode,
-                    phone: phone || mobile,
-                    isDefault: true,
-                })
                 userAddress = await UserAddress.findOne({
                     where: {
                         userId: user.toJSON().id,
@@ -920,6 +912,33 @@ export class OrderController {
                         isDefault: true,
                     },
                 })
+                if (Boolean(userAddress) === false) {
+                    // Create new address
+                    userAddress = await UserAddress.create({
+                        userId: user.toJSON().id,
+                        name,
+                        addressLine1: address,
+                        city,
+                        state,
+                        country, // Assuming default
+                        pincode,
+                        phone: phone || mobile,
+                        isDefault: true,
+                    })
+                    userAddress = await UserAddress.findOne({
+                        where: {
+                            userId: user.toJSON().id,
+                            name,
+                            addressLine1: address,
+                            city,
+                            state,
+                            country, // Assuming default
+                            pincode,
+                            phone: phone || mobile,
+                            isDefault: true,
+                        },
+                    })
+                }
             }
 
             let order
@@ -956,6 +975,12 @@ export class OrderController {
                     cartId,
                     status: status || 'Ordered',
                 })
+                if (status === 'Payment Processed' && paymentMethod === 'UPI') {
+                    await Cart.update(
+                        { status: 'Ordered' },
+                        { where: { id: cartId } },
+                    )
+                }
             } else {
                 order = await Order.create({
                     userId: user.toJSON().id,
@@ -966,6 +991,8 @@ export class OrderController {
                     paymentMethod,
                     cartId,
                     status: status || 'Ordered',
+                    awb: null,
+                    courier: null,
                 })
                 await order.reload() // Ensure the instance is reloaded with the generated id
                 // Reduce inventory for new orders with status 'Payment Processed' or 'Ordered'
@@ -1003,28 +1030,39 @@ export class OrderController {
 
             const orderInvoiceData = await this.appService.getOrderInvoiceData(
                 order.toJSON().id,
-                'Thank you for placing your order. Please find the invoice below.',
+                status === 'Payment Processed'
+                    ? 'Thank you for placing your order. Your payment will be confirmed by us shortly. Please find the invoice below.'
+                    : 'Thank you for placing your order. We will contact you shortly for your choice of payment. Please find the invoice below.',
             )
-            if (
-                (order.paymentMethod === 'UPI' &&
-                    status === 'Payment Processed') ||
-                (order.paymentMethod !== 'UPI' &&
-                    order.toJSON().status === 'Ordered')
-            ) {
-                // // Send order invoice email to user
-                await this.appService.sendMail({
-                    to: user.toJSON().email,
-                    subject: "Your Order Invoice - Renu's Home Foods",
-                    template: 'order-invoice',
-                    data: orderInvoiceData,
-                })
-                // Send order invoice email to user
-                await this.appService.sendMail({
+            if (status === 'Payment Processed' || status === 'Ordered') {
+                // Send order invoice email to ORDERS_EMAIL and capture messageId
+                const adminMailResult = await this.appService.sendMail({
                     to: process.env.ORDERS_EMAIL,
                     subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
                     template: 'order-invoice',
                     data: orderInvoiceData,
                 })
+                if (adminMailResult.success && adminMailResult.messageId) {
+                    await order.update({
+                        adminMsgId: adminMailResult.messageId,
+                    })
+                }
+            }
+
+            if (
+                (order.paymentMethod === 'UPI' &&
+                    status === 'Payment Processed') ||
+                (order.paymentMethod !== 'UPI' && status === 'Ordered')
+            ) {
+                const userMailResult = await this.appService.sendMail({
+                    to: user.toJSON().email,
+                    subject: "Your Order Invoice - Renu's Home Foods",
+                    template: 'order-invoice',
+                    data: orderInvoiceData,
+                })
+                if (userMailResult.success && userMailResult.messageId) {
+                    await order.update({ userMsgId: userMailResult.messageId })
+                }
             }
 
             const encryptedResponse = {
@@ -1893,6 +1931,135 @@ export class OrderController {
         }
     }
 
+    @Post('download-shipping-label')
+    async downloadShippingLabel(@Body() body: any, @Res() res: Response) {
+        try {
+            const decryptedBody = decryptPayload(body.request)
+            const { orderId, token } = decryptedBody
+
+            if (!orderId || !token) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order ID and Token are required.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Verify token and find user
+            jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret')
+            const userSession = await UserSession.findOne({
+                where: { token, isExpired: false },
+            })
+            if (!userSession) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Invalid or expired token.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+            // Check expiry
+            if (new Date() > userSession.expiry) {
+                await userSession.update({ isExpired: true })
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Session expired.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+            const userId = userSession.toJSON().userId
+            const user = await User.findByPk(userId, {
+                include: [{ model: Role, as: 'roles' }],
+            })
+            if (!user) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'User not found.',
+                        }),
+                    },
+                    HttpStatus.UNAUTHORIZED,
+                )
+            }
+
+            // Find order
+            const order = await Order.findByPk(orderId)
+            if (!order) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Order not found.',
+                        }),
+                    },
+                    HttpStatus.BAD_REQUEST,
+                )
+            }
+
+            // Check authorization: user owns the order or is admin
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const userRoles = user.toJSON().roles || []
+            const isAdmin = userRoles.some((role: any) => role.name === 'Admin')
+            if (!isOwner && !isAdmin) {
+                throw new HttpException(
+                    {
+                        error: encryptPayload({
+                            error: 'Unauthorized to download this shipping label.',
+                        }),
+                    },
+                    HttpStatus.FORBIDDEN,
+                )
+            }
+
+            // Generate PDF
+            const pdfBuffer =
+                await this.appService.generateShippingLabelPDF(orderId)
+            // Set response headers
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader(
+                'Content-Disposition',
+                `attachment; filename="Shipping Label - Order ${orderId}.pdf"`,
+            )
+            res.setHeader('Content-Length', pdfBuffer.length)
+
+            // Send PDF buffer
+            res.send(pdfBuffer)
+        } catch (error) {
+            const cleanMessage = `Error in downloadShippingLabel: ${
+                error?.original?.sqlMessage ||
+                error?.parent?.sqlMessage ||
+                error.message ||
+                'Unknown error'
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
+
+            logger.error(err) // Winston now logs message + stack
+            if (error instanceof HttpException) {
+                throw error
+            }
+
+            const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error'
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: `Failed to download shipping label. ${errorMessage}`,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
     @Post('get-coupons')
     async getCoupons(@Body() body: any) {
         try {
@@ -1906,6 +2073,7 @@ export class OrderController {
                 fromEndDate,
                 toEndDate,
                 users,
+                isActive,
             } = decryptedBody
             if (!Array.isArray(products) || !Array.isArray(users)) {
                 throw new HttpException(
@@ -1956,7 +2124,7 @@ export class OrderController {
             const p_users = users?.length > 0 ? users.join(',') : null
             // Call SP
             const results = await Sequelize.query(
-                'CALL GetFilteredCoupons(:userId, :products, :couponCode, :fromStartDate, :toStartDate, :fromEndDate, :toEndDate, :users)',
+                'CALL GetFilteredCoupons(:userId, :products, :couponCode, :fromStartDate, :toStartDate, :fromEndDate, :toEndDate, :users, :isActive)',
                 {
                     replacements: {
                         userId,
@@ -1967,6 +2135,7 @@ export class OrderController {
                         fromEndDate: fromEndDate || null,
                         toEndDate: toEndDate || null,
                         users: p_users,
+                        isActive: isActive ?? null,
                     },
                 },
             )
@@ -2106,6 +2275,7 @@ export class OrderController {
                 highlight,
                 location,
                 reviewDate,
+                filePath,
             } = decryptedBody as {
                 id?: number
                 name: string
@@ -2117,8 +2287,8 @@ export class OrderController {
                 products?: number[]
                 location?: string
                 reviewDate?: string
+                filePath: string
             }
-
             // Validate mandatory fields
             if (!name || !phone) {
                 throw new HttpException(
@@ -2198,7 +2368,15 @@ export class OrderController {
                         HttpStatus.NOT_FOUND,
                     )
                 }
-
+                if (Boolean(filePath) === false) {
+                    const oldPhotoPath = path.join(
+                        process.env.STATIC_PATH || '',
+                        reviewRecord.toJSON().photo,
+                    )
+                    if (existsSync(oldPhotoPath)) {
+                        unlinkSync(oldPhotoPath)
+                    }
+                }
                 await reviewRecord.update({
                     name,
                     phone,
@@ -2211,7 +2389,9 @@ export class OrderController {
                     photo:
                         photoPath !== null
                             ? photoPath
-                            : reviewRecord.toJSON().photo,
+                            : Boolean(filePath) === true
+                              ? reviewRecord.toJSON().photo
+                              : null,
                 })
             } else {
                 // Create new review

@@ -37,11 +37,13 @@ import {
     UserSession,
 } from '../models/models'
 import { AppService } from '../services/app.service'
+import { AdminDashboardPdfService } from '../services/dashboard.service'
 import {
     decryptPayload,
     deleteFileIfExists,
     encryptPayload,
     hashPassword,
+    sanitizeStringToNumber,
     saveFile,
 } from '../utils/utils'
 
@@ -49,7 +51,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret'
 
 @Controller('admin')
 export class AdminController {
-    constructor(private appService: AppService) {}
+    constructor(
+        private appService: AppService,
+        private pdfService: AdminDashboardPdfService,
+    ) {}
 
     // Helper method to reduce PriceList quantity by 1 for each product in the order
     // Only reduces if quantity > 0
@@ -415,8 +420,16 @@ export class AdminController {
             const authHeader = headers['authorization'] || ''
             await this.authenticateAdmin(authHeader)
             const decryptedBody = decryptPayload(body.request)
-            const { id, name, startDate, endDate, message, subject, userIds } =
-                decryptedBody
+            const {
+                id,
+                name,
+                startDate,
+                endDate,
+                message,
+                subject,
+                userIds,
+                imagePath,
+            } = decryptedBody
 
             if (
                 !name ||
@@ -487,6 +500,9 @@ export class AdminController {
                     )
                     // Add imagePath to update data
                     updateData.imagePath = savedImagePath
+                } else if (Boolean(imagePath) === false) {
+                    deleteFileIfExists(adCampaign.toJSON().imagePath as string)
+                    updateData.imagePath = null
                 }
 
                 // Update adCampaign using AdCampaign.update() method
@@ -549,7 +565,10 @@ export class AdminController {
                 if (file) {
                     savedImagePath = await saveFile(file, 'ads', adCampaign.id)
                     // Update campaign with imagePath
-                    await adCampaign.update({ imagePath: savedImagePath })
+                    await AdCampaign.update(
+                        { imagePath: savedImagePath },
+                        { where: { id: adCampaign.id } },
+                    )
                 }
 
                 // Deduplicate userIds before creating
@@ -1030,6 +1049,22 @@ export class AdminController {
                             fulfilledQuantity: quantities.fulfilledQuantity,
                         }),
                     )
+                } else {
+                    // Add label for all other chart types (sales charts)
+                    processedResults = (processedResults as any[]).map(
+                        (row: any) => {
+                            const category =
+                                row.category ||
+                                row.product ||
+                                row.orderStatus ||
+                                ''
+                            const totalSales = row.totalSales || 0
+                            return {
+                                ...row,
+                                displayLabel: `${category} : ₹${sanitizeStringToNumber(totalSales).toFixed(2)}`,
+                            }
+                        },
+                    )
                 }
 
                 // Map chart type to key in response
@@ -1069,8 +1104,8 @@ export class AdminController {
         }
     }
 
-    @Post('fetch-orders')
-    async fetchOrders(
+    @Post('get-orders')
+    async getOrders(
         @Body() body: { request: string },
         @Headers() headers: Record<string, string>,
     ) {
@@ -1153,6 +1188,8 @@ export class AdminController {
                         shippingDiscount: row.shippingDiscount,
                         couponCode: row.couponCode,
                         productDiscount: row.productDiscount,
+                        awb: row.awb,
+                        courier: row.courier,
                     }
                 }
                 ordersMap[orderId].products.push({
@@ -1163,6 +1200,7 @@ export class AdminController {
                     productTotal: row.productTotal,
                     priceListId: row.priceListId,
                     productId: row.productId,
+                    weight: row.productWeight,
                     productDiscount: row.productDiscount,
                 })
             })
@@ -1410,8 +1448,9 @@ export class AdminController {
                 deliveryNote,
                 paymentMethod,
                 couponId,
+                awb,
+                courier,
             } = decryptedBody
-
             // Step 1: Check if user exists by customerPhone, if not create user
             let user = await User.findOne({
                 where: { phone: customerPhone },
@@ -1623,6 +1662,8 @@ export class AdminController {
                     status: orderStatus,
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
+                    ...(awb !== undefined && { awb }),
+                    ...(courier !== undefined && { courier }),
                 })
                 isNewOrder = false
                 // Restore inventory when order is cancelled
@@ -1662,6 +1703,8 @@ export class AdminController {
                     status: orderStatus,
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
+                    awb: awb || null,
+                    courier: courier || null,
                 })
                 order = await Order.findOne({
                     where: {
@@ -1705,7 +1748,7 @@ export class AdminController {
                               : '',
                     )
                 // Send order invoice email to user
-                await this.appService.sendMail({
+                const userMailResult = await this.appService.sendMail({
                     to: user.toJSON().email,
                     subject:
                         isNewOrder === true
@@ -1716,9 +1759,12 @@ export class AdminController {
                     template: 'order-invoice',
                     data: orderInvoiceData,
                 })
+                if (userMailResult.success && userMailResult.messageId) {
+                    await order.update({ userMsgId: userMailResult.messageId })
+                }
 
-                // Send order invoice email to admin
-                await this.appService.sendMail({
+                // Send order invoice email to admin and capture messageId
+                const adminMailResult = await this.appService.sendMail({
                     to: process.env.ORDERS_EMAIL,
                     subject: isNewOrder
                         ? `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`
@@ -1728,6 +1774,11 @@ export class AdminController {
                     template: 'order-invoice',
                     data: orderInvoiceData,
                 })
+                if (adminMailResult.success && adminMailResult.messageId) {
+                    await order.update({
+                        adminMsgId: adminMailResult.messageId,
+                    })
+                }
             }
             if (isOrderShipped) {
                 const orderInvoiceData =
@@ -2528,6 +2579,55 @@ export class AdminController {
         }
     }
 
+    @Post('download-dashboard')
+    async downloadDashboard(
+        @Body() body: { request: string },
+        @Headers() headers: Record<string, string>,
+        @Res() res: Response,
+    ) {
+        try {
+            // Authenticate admin
+            const authHeader = headers['authorization'] || ''
+            await this.authenticateAdmin(authHeader)
+
+            // Decrypt request to extract filters
+            const filters = decryptPayload(body.request)
+
+            // Determine format from query param or default to pdf
+            const format = (filters.format as 'pdf' | 'png') || 'pdf'
+
+            // Generate dashboard file
+            const buffer = await this.pdfService.generateDashboardPdf(
+                filters,
+                format,
+            )
+
+            // Set response headers
+            const fileName = `Admin Dashboard-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.${format}`
+            res.setHeader(
+                'Content-Type',
+                format === 'pdf' ? 'application/pdf' : 'image/png',
+            )
+            res.setHeader(
+                'Content-Disposition',
+                `attachment; filename="${fileName}"`,
+            )
+
+            // Send buffer
+            res.send(buffer)
+        } catch (error) {
+            logger.error(`Dashboard export failed: ${error.message}`)
+            throw new HttpException(
+                {
+                    error: encryptPayload({
+                        error: `Failed to generate dashboard export: ${error.message}`,
+                    }),
+                },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
+        }
+    }
+
     @Post('export-data')
     async exportExcelData(
         @Body() body: { request: string },
@@ -2567,7 +2667,7 @@ export class AdminController {
                     .replace('T', ' ')
             }
 
-            // Call fetch-orders API internally
+            // Call get-orders API internally
             const ordersResults = await sequelize.query(
                 'CALL GetOrders(:fromDate, :toDate, :orderStatus, :category, :product, :name, :phone)',
                 {

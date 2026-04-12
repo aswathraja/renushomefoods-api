@@ -24,13 +24,16 @@ export function encryptPayload(payload: any): string {
 }
 
 // Decrypt payload
-export function decryptPayload(cipherText: string): any {
-    const bytes = AES.decrypt(cipherText, SECRET_KEY)
-    const decrypted = bytes.toString(Utf8)
+export function decryptPayload(cipherText?: string): any {
+    if (!cipherText) {
+        return {}
+    }
     try {
+        const bytes = AES.decrypt(cipherText, SECRET_KEY)
+        const decrypted = bytes.toString(Utf8)
         return JSON.parse(decrypted)
     } catch {
-        return decrypted
+        return {}
     }
 }
 
@@ -139,7 +142,7 @@ const convertVideoToMp4 = async (
             } catch (err) {
                 logger.error(
                     new Error(
-                        `Failed to delete temp input file: ${err.message}`,
+                        `Failed to delete temp input file: ${(err as Error).message}`,
                     ),
                 )
             }
@@ -195,19 +198,19 @@ export const saveFile = async (
     let returnPrefix: string
 
     if (type === 'ads') {
-        basePath = adsPath
+        basePath = adsPath || ''
         returnPrefix = '/ads/'
     } else if (
         ['inventory', 'category', 'product', 'item', 'location'].includes(type)
     ) {
-        basePath = inventoryPath
+        basePath = inventoryPath || ''
         if (type === 'category') returnPrefix = '/categories/'
         else if (type === 'product') returnPrefix = '/products/'
         else if (type === 'item') returnPrefix = '/items/'
         else if (type === 'location') returnPrefix = '/locations/'
         else if (type === 'inventory') returnPrefix = '/inventory/'
     } else if (type === 'reviews') {
-        basePath = adsPath
+        basePath = adsPath || ''
         returnPrefix = '/reviews/'
     } else {
         throw new Error('Invalid type')
@@ -284,11 +287,15 @@ export const deleteFileIfExists = (filePath: string) => {
     }
     if (
         adsPath + filePath &&
-        existsSync(resolve(path.join(adsPath, filePath.split('/').pop())))
+        existsSync(
+            resolve(path.join(adsPath, filePath?.split('/').pop() || '')),
+        )
     ) {
         try {
             unlinkSync(
-                path.resolve(path.join(adsPath, filePath.split('/').pop())),
+                path.resolve(
+                    path.join(adsPath, filePath.split('/').pop() || ''),
+                ),
             )
         } catch (err: any) {
             logger.error(
@@ -296,4 +303,24 @@ export const deleteFileIfExists = (filePath: string) => {
             )
         }
     }
+}
+
+/**
+ * Sanitizes a string to a number, removing Rupee symbol and spaces.
+ * Returns 0 if null, undefined, or NaN.
+ * @param value The string to sanitize.
+ * @returns The parsed number or 0.
+ */
+export const sanitizeStringToNumber = (
+    value: string | null | undefined,
+): number => {
+    if (Boolean(value) === false) {
+        return 0
+    }
+    if (typeof value === 'number') {
+        return value
+    }
+    const cleaned = value?.replace(/₹|\s/g, '')
+    const num = parseFloat(cleaned ?? '0')
+    return isNaN(num) ? 0 : num
 }

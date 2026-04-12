@@ -165,6 +165,7 @@ export class AppService {
                 .Cart.CartProducts.map((cartProduct) => ({
                     name: cartProduct.Product?.name,
                     quantity: cartProduct.quantity,
+                    weight: cartProduct.PriceList?.weight || 'N/A',
                     price: cartProduct.PriceList.unitprice.toFixed(2),
                     total: (
                         cartProduct.quantity * cartProduct.PriceList.unitprice
@@ -298,7 +299,6 @@ export class AppService {
             // Calculate total
             const total =
                 adjustedSubtotal + this.sanitizeStringToNumber(shipping)
-
             return {
                 logo: 'https://renushomefoods.com/static/logo.png',
                 message,
@@ -331,6 +331,10 @@ export class AppService {
                 email: 'renushomefoods@gmail.com',
                 paymentMethod: order.toJSON().paymentMethod || '',
                 shippingMethod: order.toJSON().shippingMethod || '',
+                adminMsgId: order.toJSON().adminMsgId,
+                userMsgId: order.toJSON().userMsgId,
+                couponCode:
+                    order.toJSON().OrderCoupons?.[0]?.CouponCode?.code || '',
                 totalDiscount:
                     totalDiscount > 0 ? totalDiscount.toFixed(2) : undefined,
                 orderNotes:
@@ -451,6 +455,105 @@ export class AppService {
     }
 
     /**
+     * Fetches shipping label data for the template.
+     */
+    public async getShippingLabelData(orderId: string) {
+        try {
+            const order = await Order.findByPk(orderId, {
+                include: [
+                    {
+                        model: UserAddress,
+                        as: 'UserAddress',
+                        include: [{ model: User, as: 'User' }],
+                    },
+                ],
+            })
+
+            if (!order) {
+                throw new Error('Order not found')
+            }
+
+            const address = order.toJSON().UserAddress
+            const user = address.User || {}
+
+            const userAddressLines = [
+                address.addressLine1 || '',
+                `${address.city || ''}, ${address.state || ''}`,
+                `${address.country || 'India'} - ${address.pincode || ''}`,
+            ]
+                .filter((line) => line.trim())
+                .join('<br/>')
+
+            return {
+                orderId: order.toJSON().id,
+                awb: order.toJSON().awb || 'Pending',
+                courier: order.toJSON().courier,
+                orderDate: this.formatDate(new Date(order.toJSON().createdAt)),
+                userName: address.name || 'Customer',
+                userAddress: userAddressLines,
+                userPhone: address.phone || user.phone || 'N/A',
+            }
+        } catch (error) {
+            logger.error('Error fetching shipping label data:', error)
+            throw error
+        }
+    }
+
+    /**
+     * Generates shipping label PDF (2 pages: label + review).
+     */
+    public async generateShippingLabelPDF(orderId: string): Promise<Buffer> {
+        try {
+            const labelData = await this.getShippingLabelData(orderId)
+
+            const html = this.renderTemplate('shipping-label', labelData)
+
+            const browser = await puppeteer.launch({
+                headless: true,
+                executablePath: process.env.CHROME_PATH,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-software-rasterizer',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                ],
+            })
+
+            const page = await browser.newPage()
+            await page.setContent(html, { waitUntil: 'networkidle0' })
+
+            const pdfBuffer = await page.pdf({
+                format: undefined,
+                width: '4in',
+                height: '8in',
+                printBackground: true,
+                margin: {
+                    top: '2mm',
+                    right: '2mm',
+                    bottom: '2mm',
+                    left: '2mm',
+                },
+            })
+
+            await browser.close()
+
+            logger.info(`✅ Shipping label PDF generated for order ${orderId}`)
+            return Buffer.from(pdfBuffer)
+        } catch (error) {
+            logger.error(
+                `Error generating shipping label PDF: ${error.message}`,
+            )
+            throw error
+        }
+    }
+
+    /**
      * Sends an HTML email using Nodemailer with a responsive template.
      */
     public async sendMail({
@@ -465,6 +568,14 @@ export class AppService {
         data: any
     }) {
         try {
+            const enableEmail = process.env.ENABLE_EMAIL !== 'false'
+            if (!enableEmail) {
+                logger.info(
+                    'Email sending disabled via ENABLE_EMAIL ENV variable set to false but it should work in production where it is enabled',
+                )
+                return { success: true, message: 'Email sending disabled' }
+            }
+
             const fromAddress =
                 template === 'order-invoice'
                     ? process.env.ORDERS_EMAIL
@@ -486,6 +597,20 @@ export class AppService {
                 to,
                 subject,
                 html,
+                headers: {
+                    'In-Reply-To':
+                        to === process.env.ORDERS_EMAIL
+                            ? data?.adminMsgId
+                            : data?.userMsgId
+                              ? data?.userMsgId
+                              : undefined,
+                    References:
+                        to === process.env.ORDERS_EMAIL
+                            ? data?.adminMsgId
+                            : data?.userMsgId
+                              ? data?.userMsgId
+                              : undefined,
+                },
             })
 
             logger.info('✅ Email sent')

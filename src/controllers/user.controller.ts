@@ -851,6 +851,9 @@ export class UserController {
             const userWithRoles = {
                 ...user.toJSON(),
                 roles: user.toJSON().roles || [],
+                isAdmin: user
+                    .toJSON()
+                    .roles.some((role) => /^Admin$/m.test(role.name)),
             }
 
             const encryptedResponse = {
@@ -1067,6 +1070,9 @@ export class UserController {
                         phone: user.toJSON().phone,
                     },
                     roles: user.toJSON().roles,
+                    isAdmin: user
+                        .toJSON()
+                        .roles.some((role) => /^Admin$/m.test(role.name)),
                 }),
             }
             return encryptedResponse
@@ -1185,7 +1191,11 @@ export class UserController {
                 response: encryptPayload({
                     status: 'ok',
                     ...(newToken && { newToken }),
+                    user: user,
                     roles: [...user.toJSON().roles],
+                    isAdmin: user
+                        .toJSON()
+                        .roles.some((role) => /^Admin$/m.test(role.name)),
                 }),
             }
             return encryptedResponse

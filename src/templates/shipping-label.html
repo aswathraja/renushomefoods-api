@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shipping Label {{orderId}}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: white;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      color: black;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .container {
+      width: 100%;
+      height: 100vh;
+      padding: 8mm;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 8px;
+      font-size: 18px;
+      font-weight: bold;
+      border-bottom: 2px solid #8b5e3c;
+      padding-bottom: 4px;
+    }
+
+    .details {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .addresses {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .address-box {
+      flex: 1;
+      background-color: white;
+      border: 2px solid #8b5e3c;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 16px;
+      line-height: 1.4;
+    }
+
+    .address-box h3 {
+      margin: 0 0 8px 0;
+      color: #8b5e3c;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .address-box p {
+      margin: 0 0 4px 0;
+    }
+
+    .phone {
+      font-weight: bold;
+      margin-top: 4px;
+    }
+
+    /* Review page - Page 2 */
+    .review-page {
+      margin-top: 20mm;
+      padding: 20px;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+
+    .review-page h2 {
+      color: #8b5e3c;
+      margin-bottom: 20px;
+    }
+
+    .review-links {
+      background: #f9f9f9;
+      border: 2px solid #8b5e3c;
+      border-radius: 10px;
+      padding: 30px;
+      margin: 20px 0;
+    }
+
+    .review-link {
+      display: block;
+      margin: 15px 0;
+      font-size: 20px;
+      font-weight: bold;
+      color: #8b5e3c;
+      text-decoration: none;
+    }
+
+    @media print {
+      body {
+        font-size: 14px !important;
+      }
+      
+      .container {
+        padding: 4mm !important;
+      }
+      
+      .header {
+        font-size: 16px !important;
+      }
+      
+      .address-box {
+        font-size: 14px !important;
+        padding: 8px !important;
+      }
+      
+      .address-box h3 {
+        font-size: 16px !important;
+        margin-bottom: 6px !important;
+      }
+    }
+
+    @page {
+      size: 4in 6in;
+      margin: 4mm;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Page 1: Shipping Label -->
+    <div class="header">
+      SHIPPING LABEL<br>
+      <strong>Order ID: {{orderId}}</strong><br>
+      <strong>Order Date: {{orderDate}}</strong><br>
+      {{#if awb}}<strong>AWB: {{awb}}</strong>{{else}}<span style="color: #999;">AWB: Pending</span>{{/if}}<br>
+      {{#if courier}}<strong>Courier: {{courier}}</strong>{{else}}<span style="color: #999;">Courier: Pending</span>{{/if}}
+      
+    </div>
+    
+    <div class="details">
+    </div>
+    
+    <div class="addresses">
+      <div class="address-box">
+        <h3>TO</h3>
+        <p>{{userName}}</p>
+        <div>{{{userAddress}}}</div>
+        <p class="phone">Ph: {{userPhone}}</p>
+      </div>
+      
+      <div class="address-box">
+        <h3>FROM</h3>
+        Renu's Home Foods<br/>
+        D2, Vaigundar Villa<br/>
+        Sumangali Manasarovar Garden<br/>
+        Paruthipattu, Chennai - 600071<br/>
+        <strong>Ph.No: +91 93637-20792</strong><br/>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page 2: Review Message -->
+  <div class="review-page">
+    <h2>Thank you for your purchase!</h2>
+    <div class="review-links">
+      <p>We would love your feedback:</p>
+      <a href="https://wa.me/919363720792" class="review-link" target="_blank">Share on WhatsApp or Website: <br/>+91 93637-20792</a>
+      <a href="https://renushomefoods.com" class="review-link" target="_blank">renushomefoods.com</a>
+    </div>
+    <p style="font-size: 16px; margin-top: 20px;">Enjoy Amma's Heartmade Magic</p>
+  </div>
+</body>
+</html>
+

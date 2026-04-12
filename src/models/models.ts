@@ -775,7 +775,26 @@ Order.init(
                 return now
             },
         },
+        awb: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+        courier: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+        adminMsgId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+        },
+        userMsgId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+        },
     },
+
     {
         sequelize,
         tableName: 'orders',

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard Export</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #059669; padding-bottom: 20px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0; }
+    .kpi-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; background: #f9fafb; }
+    .kpi-value { font-size: 2rem; font-weight: bold; color: #059669; }
+    .chart-section { margin: 30px 0; }
+    .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+    .chart-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; background: #fff; }
+    .table-container { margin-top: 30px; overflow: hidden; border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    th { background: #f3f4f6; font-weight: 600; }
+    tr:hover { background: #f9fafb; }
+    .footer { margin-top: 40px; text-align: center; font-size: 0.875rem; color: #c29470;
+      border-top: 1px solid #d7baa5; }
+    .summary { background: #f0fdf4; padding: 20px; border-radius: 12px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Admin Dashboard</h1>
+      <p id="date-range">Date Range: {{dateRange}}</p>
+      <p>Generated: {{generatedAt}}</p>
+    </div>
+
+    <div class="summary">
+      <h2>Executive Summary</h2>
+      <div class="kpi-grid" id="kpis-container">
+        <!-- KPIs populated by backend -->
+      </div>
+    </div>
+
+    <div class="chart-section">
+      <h2>Chart Analytics</h2>
+      <div class="chart-grid" id="charts-container">
+        <!-- Charts populated by backend (SVG or canvas) -->
+      </div>
+    </div>
+
+    <div class="table-container">
+      <h2>Recent Orders ({{orderCount}} orders)</h2>
+      <table id="orders-table">
+        <!-- Orders table populated by backend -->
+      </table>
+    </div>
+
+    <div class="footer">
+      <p>Renu's Home Foods Admin Dashboard | {{generatedAt}}</p>
+    </div>
+  </div>
+
+  <script>
+    // Backend will populate via string replacement
+    // Charts use Chart.js or static SVG
+  </script>
+</body>
+</html>

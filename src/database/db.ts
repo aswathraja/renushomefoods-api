@@ -7,7 +7,7 @@ export { sequelize }
 export async function connectToDatabase() {
     try {
         await sequelize.authenticate()
-        await sequelize.sync() // Sync models with the database
+        await sequelize.sync({ alter: true }) // Sync models with the database
         logger.info('Connection has been established successfully.')
     } catch (error) {
         const cleanMessage = `Unable to connect to the database: ${
