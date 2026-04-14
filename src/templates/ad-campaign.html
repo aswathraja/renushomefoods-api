@@ -1,80 +1,92 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Renu's Home Foods - Ad</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #fdf7ee; /* Light beige background */
-      font-family: 'Helvetica Neue', Arial, sans-serif;
-      justify-content: center !important;
-    }
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Renu's Home Foods - Ad</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: #fdf7ee; /* Light beige background */
+                font-family: "Helvetica Neue", Arial, sans-serif;
+                justify-content: center !important;
+            }
 
-    .container {
-      width: 100%;
-      padding: 10px 0;
-      display: flex;
-      justify-content: center !important;
-      background-color: #fdf7ee;
-    }
+            .container {
+                width: 100%;
+                padding: 10px 0;
+                display: flex;
+                justify-content: center !important;
+                background-color: #fdf7ee;
+            }
 
-    .email-wrapper {
-      background-color: #fdf7ee;
-      max-width: 100%;
-      width: 100%;
-      border-radius: 12px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-      overflow: hidden;
-      text-align: center;
-    }
+            .email-wrapper {
+                background-color: #fdf7ee;
+                max-width: 100%;
+                width: 100%;
+                border-radius: 12px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                text-align: center;
+            }
 
-    .header {
-      padding: 20px 15px 15px;
-      background-color: #fdf7ee;
-    }
+            .header {
+                padding: 20px 15px 15px;
+                background-color: #fdf7ee;
+            }
 
-    .header img {
-      max-width: 180px;
-      height: auto;
-    }
+            .header img {
+                max-width: 180px;
+                height: auto;
+            }
 
-    .campaign-image {
-      max-width: 90%;
-      height: auto;
-      margin: 20px auto;
-      display: block;
-      border-radius: 10px;
-    }
+            .campaign-image {
+                max-width: 90%;
+                height: auto;
+                margin: 20px auto;
+                display: block;
+                border-radius: 10px;
+            }
 
-    .footer {
-      text-align: center;
-      padding: 20px;
-      font-size: 13px;
-      color: #c29470;
-      border-top: 1px solid #d7baa5;
-      background-color: #fdf7ee;
-      margin-top: 30px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="email-wrapper">
-      <div class="header">
-        <a href="https://renushomefoods.com" target="_blank" rel="noopener noreferrer">
-          <img src="{{logo}}" alt="Logo" />
-        </a>
-      </div>
-      <a href="{{imageURL}}" target="_blank" rel="noopener noreferrer">
-        <img class="campaign-image" src="{{campaignImage}}" alt="Renu's Home Foods Ad Campaign Image" />
-      </a>
-      <div class="footer">
-        <p>© {{year}} Renu’s Home Foods. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
-</body>
+            .footer {
+                text-align: center;
+                padding: 20px;
+                font-size: 13px;
+                color: #c29470;
+                border-top: 1px solid #d7baa5;
+                background-color: #fdf7ee;
+                margin-top: 30px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="email-wrapper">
+                <div class="header">
+                    <a
+                        href="https://renushomefoods.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        <img src="{{logo}}" alt="Logo" />
+                    </a>
+                </div>
+                <a
+                    href="{{imageURL}}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    <img
+                        class="campaign-image"
+                        src="{{campaignImage}}"
+                        alt="Renu's Home Foods Ad Campaign Image"
+                    />
+                </a>
+                <div class="footer">
+                    <p>© {{year}} Renu’s Home Foods. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </body>
 </html>

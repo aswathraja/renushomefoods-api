@@ -8,18 +8,18 @@ import {
     Query,
     Res,
     UploadedFile,
-    UseInterceptors
-} from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
-import type { Response } from "express";
-import { existsSync, unlinkSync } from "fs";
-import * as jwt from "jsonwebtoken";
-import path from "path";
-import * as sequelize from "sequelize";
-import { sequelize as Sequelize } from "../database/db";
+    UseInterceptors,
+} from "@nestjs/common"
+import { FileInterceptor } from "@nestjs/platform-express"
+import type { Response } from "express"
+import { existsSync, unlinkSync } from "fs"
+import * as jwt from "jsonwebtoken"
+import path from "path"
+import * as sequelize from "sequelize"
+import { sequelize as Sequelize } from "../database/db"
 
-import { Op } from "sequelize";
-import { logger } from "../logger/logger";
+import { Op } from "sequelize"
+import { logger } from "../logger/logger"
 import {
     Cart,
     CartProduct,
@@ -38,17 +38,17 @@ import {
     User,
     UserAddress,
     UserRole,
-    UserSession
-} from "../models/models";
-import { AppService } from "../services/app.service";
-import { ShippingService } from "../services/shipping.service";
-import { decryptPayload, encryptPayload, saveFile } from "../utils/utils";
+    UserSession,
+} from "../models/models"
+import { AppService } from "../services/app.service"
+import { ShippingService } from "../services/shipping.service"
+import { decryptPayload, encryptPayload, saveFile } from "../utils/utils"
 
 @Controller("order")
 export class OrderController {
     constructor(
         private appService: AppService,
-        private shippingService: ShippingService
+        private shippingService: ShippingService,
     ) {}
 
     // Helper method to reduce PriceList quantity by 1 for each product in the order
@@ -56,20 +56,20 @@ export class OrderController {
     private async reduceInventoryForProducts(products: any[]): Promise<void> {
         for (const prod of products) {
             try {
-                const priceList = await PriceList.findByPk(prod.priceListId);
+                const priceList = await PriceList.findByPk(prod.priceListId)
                 if (priceList && priceList.toJSON().quantity > 0) {
-                    const currentQuantity = priceList.toJSON().quantity;
+                    const currentQuantity = priceList.toJSON().quantity
                     await priceList.update({
-                        quantity: currentQuantity - 1
-                    });
+                        quantity: currentQuantity - 1,
+                    })
                     logger.info(
-                        `Reduced quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity - 1}`
-                    );
+                        `Reduced quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity - 1}`,
+                    )
                 }
             } catch (error) {
                 logger.error(
-                    `Failed to reduce inventory for PriceList ${prod.priceListId}: ${error.message}`
-                );
+                    `Failed to reduce inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
             }
         }
     }
@@ -79,20 +79,20 @@ export class OrderController {
     private async increaseInventoryForProducts(products: any[]): Promise<void> {
         for (const prod of products) {
             try {
-                const priceList = await PriceList.findByPk(prod.priceListId);
+                const priceList = await PriceList.findByPk(prod.priceListId)
                 if (priceList) {
-                    const currentQuantity = priceList.toJSON().quantity || 0;
+                    const currentQuantity = priceList.toJSON().quantity || 0
                     await priceList.update({
-                        quantity: currentQuantity + 1
-                    });
+                        quantity: currentQuantity + 1,
+                    })
                     logger.info(
-                        `Increased quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity + 1} (order cancelled)`
-                    );
+                        `Increased quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity + 1} (order cancelled)`,
+                    )
                 }
             } catch (error) {
                 logger.error(
-                    `Failed to increase inventory for PriceList ${prod.priceListId}: ${error.message}`
-                );
+                    `Failed to increase inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
             }
         }
     }
@@ -101,19 +101,19 @@ export class OrderController {
     async getOrderDetails(@Body() body: any) {
         try {
             // Assuming decryption function exists, similar to encryptPayload
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             // For now, assuming body.request is already decrypted or adjust accordingly
-            const { id, phone } = decryptedBody; // Adjust if decryption is needed
+            const { id, phone } = decryptedBody // Adjust if decryption is needed
 
             if (!id || !phone) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order ID and Phone are required."
-                        })
+                            error: "Order ID and Phone are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Find order with all associations
@@ -129,12 +129,12 @@ export class OrderController {
                                 include: [
                                     {
                                         model: Product,
-                                        include: [ProductImage, Category]
+                                        include: [ProductImage, Category],
                                     },
-                                    PriceList
-                                ]
-                            }
-                        ]
+                                    PriceList,
+                                ],
+                            },
+                        ],
                     },
                     {
                         model: OrderCoupon,
@@ -146,7 +146,7 @@ export class OrderController {
                                 include: [
                                     {
                                         model: CouponDiscounts,
-                                        as: "CouponDiscounts"
+                                        as: "CouponDiscounts",
                                     },
                                     {
                                         model: CouponProducts,
@@ -154,26 +154,26 @@ export class OrderController {
                                         include: [
                                             {
                                                 model: Product,
-                                                as: "Product"
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            });
+                                                as: "Product",
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            })
 
             if (!order) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order not found."
-                        })
+                            error: "Order not found.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Verify phone matches user's phone
@@ -181,82 +181,82 @@ export class OrderController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Phone number does not match the order."
-                        })
+                            error: "Phone number does not match the order.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
-            const orderJSON = order.toJSON();
+            const orderJSON = order.toJSON()
 
             // Calculate subtotal
             let subtotal = orderJSON.Cart.CartProducts.reduce(
                 (sum, cartProduct) =>
                     sum +
                     cartProduct.quantity * cartProduct.PriceList.unitprice,
-                0
-            );
+                0,
+            )
 
             // Calculate coupon discount
-            let totalDiscount = 0;
-            const orderCoupons = orderJSON.OrderCoupons;
+            let totalDiscount = 0
+            const orderCoupons = orderJSON.OrderCoupons
             // Calculate product discounts only (Shipping handled separately by shipping service)
             if (orderCoupons && orderCoupons.length > 0) {
-                const orderCoupon = orderCoupons[0];
-                const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts;
-                const couponProducts = orderCoupon.CouponCode.CouponProducts;
+                const orderCoupon = orderCoupons[0]
+                const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts
+                const couponProducts = orderCoupon.CouponCode.CouponProducts
 
                 const applicableProductIds = couponProducts.map(
-                    (cp) => cp.productId
-                );
+                    (cp) => cp.productId,
+                )
 
                 couponDiscounts.forEach((discount) => {
-                    let discountAmount = 0;
+                    let discountAmount = 0
                     if (applicableProductIds.length === 0) {
                         if (discount.flatrate) {
-                            discountAmount = discount.discount;
+                            discountAmount = discount.discount
                         } else {
                             discountAmount =
-                                subtotal * (discount.discount / 100);
+                                subtotal * (discount.discount / 100)
                         }
                     } else {
                         const applicableSubtotal =
                             orderJSON.Cart.CartProducts.filter((cp) =>
-                                applicableProductIds.includes(cp.productId)
+                                applicableProductIds.includes(cp.productId),
                             ).reduce(
                                 (sum, cartProduct) =>
                                     sum +
                                     cartProduct.quantity *
                                         cartProduct.PriceList.unitprice,
-                                0
-                            );
+                                0,
+                            )
                         if (discount.flatrate) {
                             discountAmount = orderJSON.Cart.CartProducts.filter(
                                 (cp) =>
-                                    applicableProductIds.includes(cp.productId)
+                                    applicableProductIds.includes(cp.productId),
                             ).reduce(
                                 (sum, cp) =>
                                     sum +
                                     (cp.PriceList.unitprice -
                                         discount.discount) *
                                         cp.quantity,
-                                0
-                            );
+                                0,
+                            )
                         } else {
                             discountAmount =
-                                applicableSubtotal * (discount.discount / 100);
+                                applicableSubtotal * (discount.discount / 100)
                         }
                     }
                     if (discount.name !== "Shipping") {
-                        totalDiscount += discountAmount;
+                        totalDiscount += discountAmount
                     }
-                });
+                })
             }
 
             // Format products from cart
-            let products: any[] = [];
-            const cartProducts = orderJSON.Cart?.CartProducts || [];
+            let products: any[] = []
+            const cartProducts = orderJSON.Cart?.CartProducts || []
 
             // Initialize shippingDetails with fallback for empty carts
             let shippingDetails: any = {
@@ -266,8 +266,8 @@ export class OrderController {
                 isFree: false,
                 zone: "N/A",
                 weightCategory: "N/A",
-                message: "No items"
-            };
+                message: "No items",
+            }
 
             if (cartProducts.length > 0) {
                 products = cartProducts.map((cp: any) => ({
@@ -278,59 +278,59 @@ export class OrderController {
                     category: cp.Product?.Category?.category,
                     priceList: cp.PriceList
                         ? {
-                            id: cp.PriceList.id,
-                            weight: cp.PriceList.weight,
-                            unitprice: cp.PriceList.unitprice,
-                            productid: cp.PriceList.productid
-                        }
+                              id: cp.PriceList.id,
+                              weight: cp.PriceList.weight,
+                              unitprice: cp.PriceList.unitprice,
+                              productid: cp.PriceList.productid,
+                          }
                         : undefined,
-                    quantity: cp.quantity
-                }));
+                    quantity: cp.quantity,
+                }))
 
                 // Calculate proper shipping using shipping service (matches app.service.ts)
                 const orderWeight = this.shippingService.calculateOrderWeight(
                     cartProducts.map((cp) => ({
                         weight: cp.PriceList?.weight || "0g",
-                        quantity: cp.quantity
-                    }))
-                );
-                const pincode = orderJSON.UserAddress?.pincode || "";
+                        quantity: cp.quantity,
+                    })),
+                )
+                const pincode = orderJSON.UserAddress?.pincode || ""
                 const shippingMethod =
-                    orderJSON.shippingMethod || "Home Delivery";
-                let shippingDiscountObj = null;
+                    orderJSON.shippingMethod || "Home Delivery"
+                let shippingDiscountObj = null
                 if (orderCoupons?.length > 0) {
                     shippingDiscountObj =
                         orderCoupons[0].CouponCode.CouponDiscounts?.find(
-                            (d) => d.name === "Shipping"
-                        );
+                            (d) => d.name === "Shipping",
+                        )
                 }
                 shippingDetails = this.shippingService.getShippingDetails(
                     pincode,
                     orderWeight,
                     shippingMethod,
-                    shippingDiscountObj
-                );
+                    shippingDiscountObj,
+                )
 
                 // Recalculate subtotal (in case changed above)
                 subtotal = cartProducts.reduce(
                     (sum, cartProduct) =>
                         sum +
                         cartProduct.quantity * cartProduct.PriceList.unitprice,
-                    0
-                );
+                    0,
+                )
             }
 
             // Format order object
             const couponCode =
                 orderCoupons?.length > 0
                     ? orderCoupons[0]?.CouponCode?.code
-                    : undefined;
-            const address = orderJSON.UserAddress;
-            const {user} = orderJSON;
+                    : undefined
+            const address = orderJSON.UserAddress
+            const { user } = orderJSON
 
             // Use proper shipping cost instead of hardcoded 99
-            const finalShippingCost = shippingDetails.finalCost;
-            const totalAmount = subtotal + finalShippingCost - totalDiscount;
+            const finalShippingCost = shippingDetails.finalCost
+            const totalAmount = subtotal + finalShippingCost - totalDiscount
 
             const orderObj = {
                 id: orderJSON.id,
@@ -350,8 +350,8 @@ export class OrderController {
                 orderedDate: orderJSON.orderedDate,
                 expectedDeliveryDate: orderJSON.expectedDeliveryDate,
                 totalAmount,
-                shippingDetails // Include for frontend display
-            };
+                shippingDetails, // Include for frontend display
+            }
             const encryptedResponse = {
                 response: encryptPayload({
                     orders: [
@@ -361,72 +361,72 @@ export class OrderController {
                             products,
                             totalDiscount,
                             shippingDetails, // Replace old shippingDiscount with full details
-                            couponCode
-                        }
-                    ]
-                })
-            };
-            return encryptedResponse;
+                            couponCode,
+                        },
+                    ],
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getOrderDetails: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch order details. ${errorMessage}`
-                    })
+                        error: `Failed to fetch order details. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("pending-order")
     async getPendingOrder(@Body() body: { request: string }) {
         try {
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             if (!decryptedBody.token) {
                 return {
                     response: encryptPayload({
                         message:
-                            "Please login to get your items from your saved cart"
-                    })
-                };
+                            "Please login to get your items from your saved cart",
+                    }),
+                }
             }
             // Find user session by token
             const userSession = await UserSession.findOne({
-                where: { token: decryptedBody.token, isExpired: false }
-            });
+                where: { token: decryptedBody.token, isExpired: false },
+            })
             if (!userSession) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
-            const {userId} = userSession.toJSON();
+            const { userId } = userSession.toJSON()
             // Find the pending cart with all details
             const pendingCart = await Cart.findOne({
                 where: {
                     userId,
-                    status: "created"
+                    status: "created",
                 },
                 include: [
                     {
@@ -434,23 +434,23 @@ export class OrderController {
                         include: [
                             {
                                 model: Product,
-                                include: [ProductImage, Category]
+                                include: [ProductImage, Category],
                             },
-                            PriceList
-                        ]
-                    }
+                            PriceList,
+                        ],
+                    },
                 ],
-                order: [["id", "DESC"]]
-            });
+                order: [["id", "DESC"]],
+            })
             if (!pendingCart) {
                 return {
                     response: encryptPayload({
-                        message: "No pending cart found for this user."
-                    })
-                };
+                        message: "No pending cart found for this user.",
+                    }),
+                }
             }
-            let products: any[] = [];
-            const cartJSON = pendingCart.toJSON();
+            let products: any[] = []
+            const cartJSON = pendingCart.toJSON()
             if (cartJSON && cartJSON.CartProducts) {
                 products = cartJSON.CartProducts.map((cp: any) => ({
                     productId: cp.productId,
@@ -460,48 +460,48 @@ export class OrderController {
                     category: cp.Product?.Category?.category,
                     priceList: cp.PriceList
                         ? {
-                            id: cp.PriceList.id,
-                            weight: cp.PriceList.weight,
-                            unitprice: cp.PriceList.unitprice,
-                            productid: cp.PriceList.productid
-                        }
+                              id: cp.PriceList.id,
+                              weight: cp.PriceList.weight,
+                              unitprice: cp.PriceList.unitprice,
+                              productid: cp.PriceList.productid,
+                          }
                         : undefined,
-                    quantity: cp.quantity
-                }));
+                    quantity: cp.quantity,
+                }))
             }
 
             const encryptedResponse = {
                 response: encryptPayload({
                     cartId: cartJSON.id,
-                    products
-                })
-            };
-            return encryptedResponse;
+                    products,
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getPendingOrder: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch pending order. ${errorMessage}`
-                    })
+                        error: `Failed to fetch pending order. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -517,37 +517,37 @@ export class OrderController {
                 mobile,
                 email,
                 name,
-                token
-            } = decryptPayload(body.request);
-            const productsArray = Array.isArray(products) ? products : [];
-            let cart;
-            let user;
+                token,
+            } = decryptPayload(body.request)
+            const productsArray = Array.isArray(products) ? products : []
+            let cart
+            let user
             const normalizePhone = (num: string) =>
-                num.replace(/^\+\d{1,2}|\s+/g, "");
-            const normalizedPhone = normalizePhone(mobile);
+                num.replace(/^\+\d{1,2}|\s+/g, "")
+            const normalizedPhone = normalizePhone(mobile)
             if (token) {
                 // Verify token and find user from session
-                jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+                jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
                 const session = await UserSession.findOne({
                     where: {
                         token,
-                        isExpired: false
-                    }
-                });
+                        isExpired: false,
+                    },
+                })
                 if (session) {
                     // Check expiry
                     if (new Date() > session.expiry) {
-                        await session.update({ isExpired: true });
+                        await session.update({ isExpired: true })
                         throw new HttpException(
                             {
                                 error: encryptPayload({
-                                    error: "Session expired."
-                                })
+                                    error: "Session expired.",
+                                }),
                             },
-                            HttpStatus.FORBIDDEN
-                        );
+                            HttpStatus.FORBIDDEN,
+                        )
                     }
-                    user = await User.findByPk(session.toJSON().userId);
+                    user = await User.findByPk(session.toJSON().userId)
                 }
             }
             if (!user) {
@@ -568,110 +568,110 @@ export class OrderController {
                                             "REPLACE",
                                             sequelize.col("phone"),
                                             " ",
-                                            ""
+                                            "",
                                         ),
                                         "+",
-                                        ""
+                                        "",
                                     ),
                                     "-",
-                                    "" // optionally handle dashes if any
+                                    "", // optionally handle dashes if any
                                 ),
-                                10
+                                10,
                             ),
-                            normalizedPhone // last 10 digits of input
-                        )
-                    ]
-                };
+                            normalizedPhone, // last 10 digits of input
+                        ),
+                    ],
+                }
                 // Run a single query that checks for any of the fields
                 const existingUsers = await User.findAll({
-                    where: whereConditions
-                });
+                    where: whereConditions,
+                })
                 if (existingUsers.length > 0) {
-                    user = existingUsers[0];
+                    user = existingUsers[0]
                 }
             }
             if (!user) {
                 // Create new user
-                const otp = this.appService.generateRandomNumber(4);
+                const otp = this.appService.generateRandomNumber(4)
                 user = await User.create({
                     name: name || "User",
                     username: normalizedPhone,
                     email: email || "", // No email in order
                     phone: normalizedPhone,
                     password: "", // Assuming password is set later or not required
-                    otp
-                });
+                    otp,
+                })
                 user = await User.findOne({
                     where: {
                         name: name || "User",
                         username: normalizedPhone,
                         email: email || "", // No email in order
                         phone: normalizedPhone,
-                        password: ""
-                    }
-                });
+                        password: "",
+                    },
+                })
                 // Assign 'Buyer' role (roleId 2) to the user
-                let buyerRole = await Role.findByPk(2);
+                let buyerRole = await Role.findByPk(2)
                 if (!buyerRole) {
-                    buyerRole = await Role.create({ id: 2, name: "Buyer" });
+                    buyerRole = await Role.create({ id: 2, name: "Buyer" })
                 }
                 await UserRole.create({
                     userId: user.toJSON().id,
-                    roleId: 2
-                });
+                    roleId: 2,
+                })
             }
             if (id) {
-                cart = await Cart.findByPk(id);
+                cart = await Cart.findByPk(id)
                 if (!cart) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Cart not found"
-                            })
+                                error: "Cart not found",
+                            }),
                         },
-                        HttpStatus.NOT_ACCEPTABLE
-                    );
+                        HttpStatus.NOT_ACCEPTABLE,
+                    )
                 }
                 await cart.update({
                     userId: user.toJSON().id,
                     updatedBy,
                     updatedAt: new Date(),
-                    status: status || "Created"
-                });
+                    status: status || "Created",
+                })
                 // Get existing CartProducts for this cart
                 const existingCartProducts = await CartProduct.findAll({
-                    where: { cartId: cart.id }
-                });
+                    where: { cartId: cart.id },
+                })
                 const productIdsInRequest = productsArray.map(
-                    (p) => p.productId
-                );
+                    (p) => p.productId,
+                )
                 // Update or create CartProducts
                 for (const prod of productsArray) {
                     const existing = existingCartProducts.find(
-                        (cp) => cp.toJSON().productId === prod.productId
-                    );
+                        (cp) => cp.toJSON().productId === prod.productId,
+                    )
                     if (existing) {
                         await existing.update({
                             priceListId: prod.priceList.id,
-                            quantity: prod.quantity
-                        });
+                            quantity: prod.quantity,
+                        })
                     } else {
                         await CartProduct.create({
                             cartId: cart.id,
                             productId: prod.productId,
                             priceListId: prod.priceList.id,
-                            quantity: prod.quantity
-                        });
+                            quantity: prod.quantity,
+                        })
                     }
                 }
                 // Delete CartProducts not in the request
                 for (const existing of existingCartProducts) {
                     if (
                         !productIdsInRequest.includes(
-                            existing.toJSON().productId
+                            existing.toJSON().productId,
                         )
                     ) {
-                        await existing.destroy();
+                        await existing.destroy()
                     }
                 }
             } else {
@@ -681,49 +681,49 @@ export class OrderController {
                     updatedBy: createdBy,
                     createdAt: new Date(),
                     updatedAt: new Date(),
-                    status: status || "Created"
-                });
-                const createdProdcts = [];
+                    status: status || "Created",
+                })
+                const createdProdcts = []
                 // Create CartProducts
                 for (const prod of productsArray) {
                     const createdProduct = await CartProduct.create({
                         cartId: cart.id,
                         productId: prod.productId,
                         priceListId: prod.priceList.id,
-                        quantity: prod.quantity
-                    });
-                    createdProdcts.push(createdProduct);
+                        quantity: prod.quantity,
+                    })
+                    createdProdcts.push(createdProduct)
                 }
             }
             const encryptedResponse = {
-                response: encryptPayload(cart)
-            };
-            return encryptedResponse;
+                response: encryptPayload(cart),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in saveOrUpdateCart: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to save or update cart. ${errorMessage}`
-                    })
+                        error: `Failed to save or update cart. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -734,38 +734,38 @@ export class OrderController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Name is required"
-                        })
+                            error: "Name is required",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
             const cart = await Cart.findOne({
                 where: {
                     createdBy: name,
-                    status: "Created"
+                    status: "Created",
                 },
-                include: [Product, PriceList]
-            });
+                include: [Product, PriceList],
+            })
             const encryptedResponse = {
-                response: encryptPayload(cart)
-            };
-            return encryptedResponse;
+                response: encryptPayload(cart),
+            }
+            return encryptedResponse
         } catch (error) {
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch cart. ${errorMessage}`
-                    })
+                        error: `Failed to fetch cart. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -791,48 +791,48 @@ export class OrderController {
                 phone, // phone for address
                 token,
                 email,
-                couponId
-            } = decryptPayload(body.request);
+                couponId,
+            } = decryptPayload(body.request)
 
             // Normalize phone number: remove spaces and leading "+"
             const normalizePhone = (num: string) =>
-                num.replace(/^\+\d{1,2}|\s+/g, "");
+                num.replace(/^\+\d{1,2}|\s+/g, "")
 
-            const normalizedPhone = normalizePhone(mobile);
+            const normalizedPhone = normalizePhone(mobile)
 
             // Find or create user based on mobile or token
-            let user;
+            let user
             if (token) {
                 // Verify token and find user from session
-                jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+                jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
                 const session = await UserSession.findOne({
                     where: {
                         token,
-                        isExpired: false
-                    }
-                });
+                        isExpired: false,
+                    },
+                })
                 if (session) {
                     // Check expiry
                     if (new Date() > session.expiry) {
-                        await session.update({ isExpired: true });
+                        await session.update({ isExpired: true })
                         throw new HttpException(
                             {
                                 error: encryptPayload({
-                                    error: "Session expired."
-                                })
+                                    error: "Session expired.",
+                                }),
                             },
-                            HttpStatus.FORBIDDEN
-                        );
+                            HttpStatus.FORBIDDEN,
+                        )
                     }
-                    user = await User.findByPk(session.toJSON().userId);
+                    user = await User.findByPk(session.toJSON().userId)
                 }
             }
             if (!user) {
                 // Normalize phone number: remove spaces and leading "+"
                 const normalizePhone = (num: string) =>
-                    num.replace(/^\+\d{1,2}|\s+/g, "");
+                    num.replace(/^\+\d{1,2}|\s+/g, "")
 
-                const normalizedPhone = normalizePhone(mobile);
+                const normalizedPhone = normalizePhone(mobile)
                 const whereConditions: any = {
                     [Op.or]: [
                         { username: normalizedPhone },
@@ -848,30 +848,30 @@ export class OrderController {
                                             "REPLACE",
                                             sequelize.col("phone"),
                                             " ",
-                                            ""
+                                            "",
                                         ),
                                         "+",
-                                        ""
+                                        "",
                                     ),
                                     "-",
-                                    "" // optionally handle dashes if any
+                                    "", // optionally handle dashes if any
                                 ),
-                                10
+                                10,
                             ),
-                            normalizedPhone // last 10 digits of input
-                        )
-                    ]
-                };
+                            normalizedPhone, // last 10 digits of input
+                        ),
+                    ],
+                }
                 // Run a single query that checks for any of the fields
                 const existingUsers = await User.findAll({
-                    where: whereConditions
-                });
+                    where: whereConditions,
+                })
                 if (existingUsers.length > 0) {
-                    user = existingUsers[0];
+                    user = existingUsers[0]
                 }
             }
             if (!user) {
-                const otp = this.appService.generateRandomNumber(4);
+                const otp = this.appService.generateRandomNumber(4)
                 // Create new user
                 user = await User.create({
                     name: name || "Unknown",
@@ -879,28 +879,28 @@ export class OrderController {
                     email, // No email in order
                     phone: normalizedPhone,
                     password: "", // Assuming password is set later or not required
-                    otp
-                });
+                    otp,
+                })
                 user = await User.findOne({
                     where: {
                         name: name || "User",
                         email: email || "", // No email in order
-                        phone: normalizedPhone
-                    }
-                });
+                        phone: normalizedPhone,
+                    },
+                })
                 // Assign 'Buyer' role (roleId 2) to the user
-                let buyerRole = await Role.findByPk(2);
+                let buyerRole = await Role.findByPk(2)
                 if (!buyerRole) {
-                    buyerRole = await Role.create({ id: 2, name: "Buyer" });
+                    buyerRole = await Role.create({ id: 2, name: "Buyer" })
                 }
                 await UserRole.create({
                     userId: user.toJSON().id,
-                    roleId: 2
-                });
+                    roleId: 2,
+                })
             }
 
             // Find or create user address
-            let userAddress;
+            let userAddress
             if (userAddressId && user.toJSON().id) {
                 userAddress = await UserAddress.findOne({
                     where: {
@@ -909,21 +909,21 @@ export class OrderController {
                             {
                                 [Op.and]: [
                                     { userId: user.toJSON().id },
-                                    { isDefault: true }
-                                ]
-                            }
-                        ]
-                    }
-                });
+                                    { isDefault: true },
+                                ],
+                            },
+                        ],
+                    },
+                })
                 if (!userAddress) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "User Address not found"
-                            })
+                                error: "User Address not found",
+                            }),
                         },
-                        HttpStatus.BAD_REQUEST
-                    );
+                        HttpStatus.BAD_REQUEST,
+                    )
                 }
             } else {
                 userAddress = await UserAddress.findOne({
@@ -936,9 +936,9 @@ export class OrderController {
                         country, // Assuming default
                         pincode,
                         phone: phone || mobile,
-                        isDefault: true
-                    }
-                });
+                        isDefault: true,
+                    },
+                })
                 if (Boolean(userAddress) === false) {
                     // Create new address
                     userAddress = await UserAddress.create({
@@ -950,8 +950,8 @@ export class OrderController {
                         country, // Assuming default
                         pincode,
                         phone: phone || mobile,
-                        isDefault: true
-                    });
+                        isDefault: true,
+                    })
                     userAddress = await UserAddress.findOne({
                         where: {
                             userId: user.toJSON().id,
@@ -962,13 +962,13 @@ export class OrderController {
                             country, // Assuming default
                             pincode,
                             phone: phone || mobile,
-                            isDefault: true
-                        }
-                    });
+                            isDefault: true,
+                        },
+                    })
                 }
             }
 
-            let order;
+            let order
             if (Boolean(user?.toJSON()?.id) === false) {
                 user = await User.findOne({
                     where: {
@@ -976,21 +976,21 @@ export class OrderController {
                         username: normalizedPhone,
                         email, // No email in order
                         phone: normalizedPhone,
-                        password: ""
-                    }
-                });
+                        password: "",
+                    },
+                })
             }
             if (id) {
-                order = await Order.findByPk(id);
+                order = await Order.findByPk(id)
                 if (!order) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Order not found"
-                            })
+                                error: "Order not found",
+                            }),
                         },
-                        HttpStatus.NOT_ACCEPTABLE
-                    );
+                        HttpStatus.NOT_ACCEPTABLE,
+                    )
                 }
                 await order.update({
                     userId: user.toJSON().id,
@@ -1000,13 +1000,13 @@ export class OrderController {
                     shippingMethod,
                     paymentMethod,
                     cartId,
-                    status: status || "Ordered"
-                });
+                    status: status || "Ordered",
+                })
                 if (status === "Payment Processed" && paymentMethod === "UPI") {
                     await Cart.update(
                         { status: "Ordered" },
-                        { where: { id: cartId } }
-                    );
+                        { where: { id: cartId } },
+                    )
                 }
             } else {
                 order = await Order.create({
@@ -1019,11 +1019,11 @@ export class OrderController {
                     cartId,
                     status: status || "Ordered",
                     awb: null,
-                    courier: null
-                });
-                await order.reload(); // Ensure the instance is reloaded with the generated id
+                    courier: null,
+                })
+                await order.reload() // Ensure the instance is reloaded with the generated id
                 // Reduce inventory for new orders with status 'Payment Processed' or 'Ordered'
-                const orderStatus = status || "Ordered";
+                const orderStatus = status || "Ordered"
                 if (
                     orderStatus === "Payment Processed" ||
                     orderStatus === "Ordered"
@@ -1031,27 +1031,27 @@ export class OrderController {
                     // Get cart products to reduce inventory
                     const cartProducts = await CartProduct.findAll({
                         where: { cartId },
-                        include: [PriceList]
-                    });
+                        include: [PriceList],
+                    })
                     const productsToReduce = cartProducts.map((cp: any) => ({
-                        priceListId: cp.toJSON().priceListId
-                    }));
-                    await this.reduceInventoryForProducts(productsToReduce);
+                        priceListId: cp.toJSON().priceListId,
+                    }))
+                    await this.reduceInventoryForProducts(productsToReduce)
                 }
             }
 
             // Handle couponId: save or update in OrderCoupon table
             if (couponId) {
                 const existingOrderCoupon = await OrderCoupon.findOne({
-                    where: { orderId: order.toJSON().id }
-                });
+                    where: { orderId: order.toJSON().id },
+                })
                 if (existingOrderCoupon) {
-                    await existingOrderCoupon.update({ couponCodeId: couponId });
+                    await existingOrderCoupon.update({ couponCodeId: couponId })
                 } else {
                     await OrderCoupon.create({
                         orderId: order.toJSON().id,
-                        couponCodeId: couponId
-                    });
+                        couponCodeId: couponId,
+                    })
                 }
             }
 
@@ -1059,20 +1059,20 @@ export class OrderController {
                 order.toJSON().id,
                 status === "Payment Processed"
                     ? "Thank you for placing your order. Your payment will be confirmed by us shortly. Please find the invoice below."
-                    : "Thank you for placing your order. We will contact you shortly for your choice of payment. Please find the invoice below."
-            );
+                    : "Thank you for placing your order. We will contact you shortly for your choice of payment. Please find the invoice below.",
+            )
             if (status === "Payment Processed" || status === "Ordered") {
                 // Send order invoice email to ORDERS_EMAIL and capture messageId
                 const adminMailResult = await this.appService.sendMail({
                     to: process.env.ORDERS_EMAIL,
                     subject: `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`,
                     template: "order-invoice",
-                    data: orderInvoiceData
-                });
+                    data: orderInvoiceData,
+                })
                 if (adminMailResult.success && adminMailResult.messageId) {
                     await order.update({
-                        adminMsgId: adminMailResult.messageId
-                    });
+                        adminMsgId: adminMailResult.messageId,
+                    })
                 }
             }
 
@@ -1085,42 +1085,42 @@ export class OrderController {
                     to: user.toJSON().email,
                     subject: "Your Order Invoice - Renu's Home Foods",
                     template: "order-invoice",
-                    data: orderInvoiceData
-                });
+                    data: orderInvoiceData,
+                })
                 if (userMailResult.success && userMailResult.messageId) {
-                    await order.update({ userMsgId: userMailResult.messageId });
+                    await order.update({ userMsgId: userMailResult.messageId })
                 }
             }
 
             const encryptedResponse = {
-                response: encryptPayload(order)
-            };
-            return encryptedResponse;
+                response: encryptPayload(order),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in saveOrUpdateOrder: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to save or update order. ${errorMessage}`
-                    })
+                        error: `Failed to save or update order. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -1131,86 +1131,86 @@ export class OrderController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order id is required"
-                        })
+                            error: "Order id is required",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
-            const order = await Order.findByPk(id, { include: [Cart] });
+            const order = await Order.findByPk(id, { include: [Cart] })
             if (!order) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order not found"
-                        })
+                            error: "Order not found",
+                        }),
                     },
-                    HttpStatus.NOT_ACCEPTABLE
-                );
+                    HttpStatus.NOT_ACCEPTABLE,
+                )
             }
             const encryptedResponse = {
-                response: encryptPayload(order)
-            };
-            return encryptedResponse;
+                response: encryptPayload(order),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getOrderById: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch order. ${errorMessage}`
-                    })
+                        error: `Failed to fetch order. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
     @Post("get-user-orders")
     async getUserOrders(@Body() body: any) {
         try {
-            const { token } = decryptPayload(body.request);
+            const { token } = decryptPayload(body.request)
 
             if (!token) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Token is required."
-                        })
+                            error: "Token is required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Find user session by token
             const userSession = await UserSession.findOne({
-                where: { token, isExpired: false }
-            });
+                where: { token, isExpired: false },
+            })
             if (!userSession) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
 
-            const {userId} = userSession.toJSON();
+            const { userId } = userSession.toJSON()
 
             // Find all orders for the user with all associations
             const orders = await Order.findAll({
@@ -1226,12 +1226,12 @@ export class OrderController {
                                 include: [
                                     {
                                         model: Product,
-                                        include: [ProductImage, Category]
+                                        include: [ProductImage, Category],
                                     },
-                                    PriceList
-                                ]
-                            }
-                        ]
+                                    PriceList,
+                                ],
+                            },
+                        ],
                     },
                     {
                         model: OrderCoupon,
@@ -1243,7 +1243,7 @@ export class OrderController {
                                 include: [
                                     {
                                         model: CouponDiscounts,
-                                        as: "CouponDiscounts"
+                                        as: "CouponDiscounts",
                                     },
                                     {
                                         model: CouponProducts,
@@ -1251,95 +1251,95 @@ export class OrderController {
                                         include: [
                                             {
                                                 model: Product,
-                                                as: "Product"
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
+                                                as: "Product",
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
                 ],
-                order: [["id", "DESC"]]
-            });
+                order: [["id", "DESC"]],
+            })
 
             // Format each order
             const formattedOrders = orders.map((order) => {
-                const orderJSON = order.toJSON();
+                const orderJSON = order.toJSON()
 
                 // Calculate subtotal
                 let subtotal = orderJSON.Cart.CartProducts.reduce(
                     (sum, cartProduct) =>
                         sum +
                         cartProduct.quantity * cartProduct.PriceList.unitprice,
-                    0
-                );
+                    0,
+                )
 
                 // Calculate product discounts only (Shipping handled separately)
-                let totalDiscount = 0;
-                const orderCoupons = orderJSON.OrderCoupons;
+                let totalDiscount = 0
+                const orderCoupons = orderJSON.OrderCoupons
                 if (orderCoupons && orderCoupons.length > 0) {
-                    const orderCoupon = orderCoupons[0];
+                    const orderCoupon = orderCoupons[0]
                     const couponDiscounts =
-                        orderCoupon.CouponCode.CouponDiscounts;
-                    const couponProducts = orderCoupon.CouponCode.CouponProducts;
+                        orderCoupon.CouponCode.CouponDiscounts
+                    const couponProducts = orderCoupon.CouponCode.CouponProducts
 
                     const applicableProductIds = couponProducts.map(
-                        (cp) => cp.productId
-                    );
+                        (cp) => cp.productId,
+                    )
 
                     couponDiscounts.forEach((discount) => {
-                        let discountAmount = 0;
+                        let discountAmount = 0
                         if (applicableProductIds.length === 0) {
                             if (discount.flatrate) {
-                                discountAmount = discount.discount;
+                                discountAmount = discount.discount
                             } else {
                                 discountAmount =
-                                    subtotal * (discount.discount / 100);
+                                    subtotal * (discount.discount / 100)
                             }
                         } else {
                             const applicableSubtotal =
                                 orderJSON.Cart.CartProducts.filter((cp) =>
-                                    applicableProductIds.includes(cp.productId)
+                                    applicableProductIds.includes(cp.productId),
                                 ).reduce(
                                     (sum, cartProduct) =>
                                         sum +
                                         cartProduct.quantity *
                                             cartProduct.PriceList.unitprice,
-                                    0
-                                );
+                                    0,
+                                )
                             if (discount.flatrate) {
                                 discountAmount =
                                     orderJSON.Cart.CartProducts.filter((cp) =>
                                         applicableProductIds.includes(
-                                            cp.productId
-                                        )
+                                            cp.productId,
+                                        ),
                                     ).reduce(
                                         (sum, cp) =>
                                             sum +
                                             (cp.PriceList.unitprice -
                                                 discount.discount) *
                                                 cp.quantity,
-                                        0
-                                    );
+                                        0,
+                                    )
                                 if (discount.name !== "Shipping") {
-                                    totalDiscount += discountAmount;
+                                    totalDiscount += discountAmount
                                 }
                             } else {
                                 discountAmount =
                                     applicableSubtotal *
-                                    (discount.discount / 100);
+                                    (discount.discount / 100)
                                 if (discount.name !== "Shipping") {
-                                    totalDiscount += discountAmount;
+                                    totalDiscount += discountAmount
                                 }
                             }
                         }
-                    });
+                    })
                 }
 
                 // Format products from cart
-                let products: any[] = [];
-                const cartProducts = orderJSON.Cart?.CartProducts || [];
+                let products: any[] = []
+                const cartProducts = orderJSON.Cart?.CartProducts || []
 
                 // Initialize shippingDetails with fallback for empty carts
                 let shippingDetails: any = {
@@ -1349,8 +1349,8 @@ export class OrderController {
                     isFree: false,
                     zone: "N/A",
                     weightCategory: "N/A",
-                    message: "No items"
-                };
+                    message: "No items",
+                }
 
                 if (cartProducts.length > 0) {
                     products = cartProducts.map((cp: any) => ({
@@ -1361,47 +1361,47 @@ export class OrderController {
                         category: cp.Product?.Category?.category,
                         priceList: cp.PriceList
                             ? {
-                                id: cp.PriceList.id,
-                                weight: cp.PriceList.weight,
-                                unitprice: cp.PriceList.unitprice,
-                                productid: cp.PriceList.productid
-                            }
+                                  id: cp.PriceList.id,
+                                  weight: cp.PriceList.weight,
+                                  unitprice: cp.PriceList.unitprice,
+                                  productid: cp.PriceList.productid,
+                              }
                             : undefined,
-                        quantity: cp.quantity
-                    }));
+                        quantity: cp.quantity,
+                    }))
 
                     // Calculate proper shipping using shipping service
                     const orderWeight =
                         this.shippingService.calculateOrderWeight(
                             cartProducts.map((cp) => ({
                                 weight: cp.PriceList?.weight || "0g",
-                                quantity: cp.quantity
-                            }))
-                        );
-                    const pincode = orderJSON.UserAddress?.pincode || "";
+                                quantity: cp.quantity,
+                            })),
+                        )
+                    const pincode = orderJSON.UserAddress?.pincode || ""
                     const shippingMethod =
-                        orderJSON.shippingMethod || "Home Delivery";
-                    let shippingDiscountObj = null;
+                        orderJSON.shippingMethod || "Home Delivery"
+                    let shippingDiscountObj = null
                     if (orderCoupons?.length > 0) {
                         shippingDiscountObj =
                             orderCoupons[0].CouponCode.CouponDiscounts?.find(
-                                (d) => d.name === "Shipping"
-                            );
+                                (d) => d.name === "Shipping",
+                            )
                     }
                     shippingDetails = this.shippingService.getShippingDetails(
                         pincode,
                         orderWeight,
                         shippingMethod,
-                        shippingDiscountObj
-                    );
+                        shippingDiscountObj,
+                    )
 
                     subtotal = cartProducts.reduce(
                         (sum, cartProduct) =>
                             sum +
                             cartProduct.quantity *
                                 cartProduct.PriceList.unitprice,
-                        0
-                    );
+                        0,
+                    )
                 } else {
                     shippingDetails = {
                         baseCost: 0,
@@ -1410,21 +1410,21 @@ export class OrderController {
                         isFree: false,
                         zone: "N/A",
                         weightCategory: "N/A",
-                        message: "No items"
-                    };
+                        message: "No items",
+                    }
                 }
 
                 // Format order object
-                const address = orderJSON.UserAddress;
-                const {user} = orderJSON;
+                const address = orderJSON.UserAddress
+                const { user } = orderJSON
                 const couponCode =
                     orderCoupons?.length > 0
                         ? orderCoupons[0]?.CouponCode?.code
-                        : undefined;
+                        : undefined
 
                 // Use proper shipping cost
-                const finalShippingCost = shippingDetails.finalCost;
-                const totalAmount = subtotal + finalShippingCost - totalDiscount;
+                const finalShippingCost = shippingDetails.finalCost
+                const totalAmount = subtotal + finalShippingCost - totalDiscount
 
                 const orderObj = {
                     id: orderJSON.id,
@@ -1444,8 +1444,8 @@ export class OrderController {
                     orderedDate: orderJSON.orderedDate,
                     expectedDeliveryDate: orderJSON.expectedDeliveryDate,
                     totalAmount,
-                    shippingDetails
-                };
+                    shippingDetails,
+                }
 
                 return {
                     cartId: orderJSON.Cart?.id,
@@ -1453,249 +1453,249 @@ export class OrderController {
                     products,
                     totalDiscount,
                     shippingDetails,
-                    couponCode
-                };
-            });
+                    couponCode,
+                }
+            })
 
             const encryptedResponse = {
-                response: encryptPayload({ orders: formattedOrders })
-            };
-            return encryptedResponse;
+                response: encryptPayload({ orders: formattedOrders }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getUserOrders: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch user orders. ${errorMessage}`
-                    })
+                        error: `Failed to fetch user orders. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("cancel-order")
     async cancelOrder(@Body() body: any) {
         try {
-            const decryptedBody = decryptPayload(body.request);
-            const { id, token } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody
 
             if (!id || !token) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order ID and Token are required."
-                        })
+                            error: "Order ID and Token are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Verify token and find user
-            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
             const userSession = await UserSession.findOne({
-                where: { token, isExpired: false }
-            });
+                where: { token, isExpired: false },
+            })
             if (!userSession) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
             // Check expiry
             if (new Date() > userSession.expiry) {
-                await userSession.update({ isExpired: true });
+                await userSession.update({ isExpired: true })
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Session expired."
-                        })
+                            error: "Session expired.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
-            const {userId} = userSession.toJSON();
-            const user = await User.findByPk(userId);
+            const { userId } = userSession.toJSON()
+            const user = await User.findByPk(userId)
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User not found."
-                        })
+                            error: "User not found.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
 
             // Find order with associations
             const order = await Order.findByPk(id, {
-                include: [{ model: User, as: "user" }, { model: Cart }]
-            });
+                include: [{ model: User, as: "user" }, { model: Cart }],
+            })
 
             if (!order) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order not found."
-                        })
+                            error: "Order not found.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Check authorization: user owns the order or is admin (roleId 1)
-            const orderUserId = order.toJSON().userId;
-            const isOwner = orderUserId === userId;
-            const isAdmin = user.toJSON().roleId === 1;
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const isAdmin = user.toJSON().roleId === 1
             if (!isOwner && !isAdmin) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Unauthorized to cancel this order."
-                        })
+                            error: "Unauthorized to cancel this order.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
 
             // Get cart products before updating status to restore inventory
-            const cart = order.toJSON().Cart;
-            let cartProducts: any[] = [];
+            const cart = order.toJSON().Cart
+            let cartProducts: any[] = []
             if (cart) {
                 cartProducts = await CartProduct.findAll({
                     where: { cartId: cart.id },
-                    include: [PriceList]
-                });
+                    include: [PriceList],
+                })
             }
 
             // Update order status to 'Cancelled'
-            await order.update({ status: "Cancelled" });
+            await order.update({ status: "Cancelled" })
 
             // Update cart status to 'Cancelled'
             if (cart) {
                 await Cart.update(
                     { status: "Cancelled" },
-                    { where: { id: cart.id } }
-                );
+                    { where: { id: cart.id } },
+                )
             }
 
             // Restore inventory for cancelled order
             if (cartProducts.length > 0) {
                 const productsToRestore = cartProducts.map((cp: any) => ({
-                    priceListId: cp.toJSON().priceListId
-                }));
-                await this.increaseInventoryForProducts(productsToRestore);
+                    priceListId: cp.toJSON().priceListId,
+                }))
+                await this.increaseInventoryForProducts(productsToRestore)
             }
 
             const encryptedResponse = {
                 response: encryptPayload({
                     message: "Order cancelled successfully.",
-                    orderId: id
-                })
-            };
-            return encryptedResponse;
+                    orderId: id,
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in cancelOrder: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to cancel order. ${errorMessage}`
-                    })
+                        error: `Failed to cancel order. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("reorder")
     async reorder(@Body() body: any) {
         try {
-            const decryptedBody = decryptPayload(body.request);
-            const { id, token } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody
 
             if (!id || !token) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order ID and Token are required."
-                        })
+                            error: "Order ID and Token are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Verify token and find user
-            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
             const userSession = await UserSession.findOne({
-                where: { token, isExpired: false }
-            });
+                where: { token, isExpired: false },
+            })
             if (!userSession) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
             // Check expiry
             if (new Date() > userSession.expiry) {
-                await userSession.update({ isExpired: true });
+                await userSession.update({ isExpired: true })
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Session expired."
-                        })
+                            error: "Session expired.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
-            const {userId} = userSession.toJSON();
-            const user = await User.findByPk(userId);
+            const { userId } = userSession.toJSON()
+            const user = await User.findByPk(userId)
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User not found."
-                        })
+                            error: "User not found.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
 
             // Find order with cart and cart products
@@ -1706,107 +1706,107 @@ export class OrderController {
                         include: [
                             {
                                 model: CartProduct,
-                                include: [PriceList]
-                            }
-                        ]
-                    }
-                ]
-            });
+                                include: [PriceList],
+                            },
+                        ],
+                    },
+                ],
+            })
 
             if (!order) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order not found."
-                        })
+                            error: "Order not found.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Check authorization: user owns the order or is admin (roleId 1)
-            const orderUserId = order.toJSON().userId;
-            const isOwner = orderUserId === userId;
-            const isAdmin = user.toJSON().roleId === 1;
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const isAdmin = user.toJSON().roleId === 1
             if (!isOwner && !isAdmin) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Unauthorized to reorder this order."
-                        })
+                            error: "Unauthorized to reorder this order.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
 
-            const cart = order.toJSON().Cart;
+            const cart = order.toJSON().Cart
             if (!cart || !cart.CartProducts || cart.CartProducts.length === 0) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "No products found in the order to reorder."
-                        })
+                            error: "No products found in the order to reorder.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Check if user already has an existing cart
             const existingCart = await Cart.findOne({
                 where: {
                     userId,
-                    status: "Created"
+                    status: "Created",
                 },
                 include: [
                     {
                         model: CartProduct,
-                        include: [PriceList]
-                    }
-                ]
-            });
+                        include: [PriceList],
+                    },
+                ],
+            })
 
-            let newCart;
-            const createdProducts = [];
-            const updatedProducts = [];
+            let newCart
+            const createdProducts = []
+            const updatedProducts = []
 
             if (existingCart) {
                 // Update existing cart
-                newCart = existingCart;
+                newCart = existingCart
                 await existingCart.update({
                     updatedBy: user.toJSON().name || "User",
-                    updatedAt: new Date()
-                });
+                    updatedAt: new Date(),
+                })
 
                 // Get existing cart products for updating quantities
                 const existingCartProducts =
-                    existingCart.toJSON().CartProducts || [];
+                    existingCart.toJSON().CartProducts || []
 
                 // Process each product from the original order
                 for (const cp of cart.CartProducts) {
                     const existingProduct = existingCartProducts.find(
                         (ecp: any) =>
                             ecp.productId === cp.productId &&
-                            ecp.priceListId === cp.priceListId
-                    );
+                            ecp.priceListId === cp.priceListId,
+                    )
 
                     if (existingProduct) {
                         // Update quantity if product already exists
                         const newQuantity =
-                            existingProduct.quantity + cp.quantity;
+                            existingProduct.quantity + cp.quantity
                         await CartProduct.update(
                             { quantity: newQuantity },
-                            { where: { id: existingProduct.id } }
-                        );
-                        updatedProducts.push(existingProduct.id);
+                            { where: { id: existingProduct.id } },
+                        )
+                        updatedProducts.push(existingProduct.id)
                     } else {
                         // Create new cart product if it doesn't exist
                         const createdProduct = await CartProduct.create({
                             cartId: existingCart.toJSON().id,
                             productId: cp.productId,
                             priceListId: cp.priceListId,
-                            quantity: cp.quantity
-                        });
-                        createdProducts.push(createdProduct);
+                            quantity: cp.quantity,
+                        })
+                        createdProducts.push(createdProduct)
                     }
                 }
             } else {
@@ -1817,8 +1817,8 @@ export class OrderController {
                     updatedBy: user.toJSON().name || "User",
                     createdAt: new Date(),
                     updatedAt: new Date(),
-                    status: "Created"
-                });
+                    status: "Created",
+                })
 
                 // Create cart products from the original order
                 for (const cp of cart.CartProducts) {
@@ -1826,13 +1826,13 @@ export class OrderController {
                         cartId: newCart.toJSON().id,
                         productId: cp.productId,
                         priceListId: cp.priceListId,
-                        quantity: cp.quantity
-                    });
-                    createdProducts.push(createdProduct);
+                        quantity: cp.quantity,
+                    })
+                    createdProducts.push(createdProduct)
                 }
             }
             const totalProductsAdded =
-                createdProducts.length + updatedProducts.length;
+                createdProducts.length + updatedProducts.length
 
             const encryptedResponse = {
                 response: encryptPayload({
@@ -1842,300 +1842,300 @@ export class OrderController {
                     cartId: newCart.toJSON().id,
                     productsCount: totalProductsAdded,
                     createdProducts: createdProducts.length,
-                    updatedProducts: updatedProducts.length
-                })
-            };
-            return encryptedResponse;
+                    updatedProducts: updatedProducts.length,
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in reorder: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to reorder. ${errorMessage}`
-                    })
+                        error: `Failed to reorder. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("download-invoice")
     async downloadInvoice(@Body() body: any, @Res() res: Response) {
         try {
-            const decryptedBody = decryptPayload(body.request);
-            const { orderId, token } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { orderId, token } = decryptedBody
 
             if (!orderId || !token) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order ID and Token are required."
-                        })
+                            error: "Order ID and Token are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Verify token and find user
-            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
             const userSession = await UserSession.findOne({
-                where: { token, isExpired: false }
-            });
+                where: { token, isExpired: false },
+            })
             if (!userSession) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
             // Check expiry
             if (new Date() > userSession.expiry) {
-                await userSession.update({ isExpired: true });
+                await userSession.update({ isExpired: true })
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Session expired."
-                        })
+                            error: "Session expired.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
-            const {userId} = userSession.toJSON();
+            const { userId } = userSession.toJSON()
             const user = await User.findByPk(userId, {
-                include: [{ model: Role, as: "roles" }]
-            });
+                include: [{ model: Role, as: "roles" }],
+            })
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User not found."
-                        })
+                            error: "User not found.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
 
             // Find order
-            const order = await Order.findByPk(orderId);
+            const order = await Order.findByPk(orderId)
             if (!order) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order not found."
-                        })
+                            error: "Order not found.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Check authorization: user owns the order or is admin
-            const orderUserId = order.toJSON().userId;
-            const isOwner = orderUserId === userId;
-            const userRoles = user.toJSON().roles || [];
-            const isAdmin = userRoles.some((role: any) => role.name === "Admin");
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const userRoles = user.toJSON().roles || []
+            const isAdmin = userRoles.some((role: any) => role.name === "Admin")
             if (!isOwner && !isAdmin) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Unauthorized to download this invoice."
-                        })
+                            error: "Unauthorized to download this invoice.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
 
             // Generate PDF
             const pdfBuffer =
-                await this.appService.generateOrderInvoicePDF(orderId);
+                await this.appService.generateOrderInvoicePDF(orderId)
             // Set response headers
-            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Type", "application/pdf")
             res.setHeader(
                 "Content-Disposition",
-                `attachment; filename="Renus Home Foods - Order Invoice - ${orderId}.pdf"`
-            );
-            res.setHeader("Content-Length", pdfBuffer.length);
+                `attachment; filename="Renus Home Foods - Order Invoice - ${orderId}.pdf"`,
+            )
+            res.setHeader("Content-Length", pdfBuffer.length)
 
             // Send PDF buffer
-            res.send(pdfBuffer);
+            res.send(pdfBuffer)
         } catch (error) {
             const cleanMessage = `Error in downloadInvoice: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to download invoice. ${errorMessage}`
-                    })
+                        error: `Failed to download invoice. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("download-shipping-label")
     async downloadShippingLabel(@Body() body: any, @Res() res: Response) {
         try {
-            const decryptedBody = decryptPayload(body.request);
-            const { orderId, token } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { orderId, token } = decryptedBody
 
             if (!orderId || !token) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order ID and Token are required."
-                        })
+                            error: "Order ID and Token are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Verify token and find user
-            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+            jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
             const userSession = await UserSession.findOne({
-                where: { token, isExpired: false }
-            });
+                where: { token, isExpired: false },
+            })
             if (!userSession) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
             // Check expiry
             if (new Date() > userSession.expiry) {
-                await userSession.update({ isExpired: true });
+                await userSession.update({ isExpired: true })
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Session expired."
-                        })
+                            error: "Session expired.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
-            const {userId} = userSession.toJSON();
+            const { userId } = userSession.toJSON()
             const user = await User.findByPk(userId, {
-                include: [{ model: Role, as: "roles" }]
-            });
+                include: [{ model: Role, as: "roles" }],
+            })
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User not found."
-                        })
+                            error: "User not found.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
 
             // Find order
-            const order = await Order.findByPk(orderId);
+            const order = await Order.findByPk(orderId)
             if (!order) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Order not found."
-                        })
+                            error: "Order not found.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Check authorization: user owns the order or is admin
-            const orderUserId = order.toJSON().userId;
-            const isOwner = orderUserId === userId;
-            const userRoles = user.toJSON().roles || [];
-            const isAdmin = userRoles.some((role: any) => role.name === "Admin");
+            const orderUserId = order.toJSON().userId
+            const isOwner = orderUserId === userId
+            const userRoles = user.toJSON().roles || []
+            const isAdmin = userRoles.some((role: any) => role.name === "Admin")
             if (!isOwner && !isAdmin) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Unauthorized to download this shipping label."
-                        })
+                            error: "Unauthorized to download this shipping label.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
 
             // Generate PDF
             const pdfBuffer =
-                await this.appService.generateShippingLabelPDF(orderId);
+                await this.appService.generateShippingLabelPDF(orderId)
             // Set response headers
-            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Type", "application/pdf")
             res.setHeader(
                 "Content-Disposition",
-                `attachment; filename="Shipping Label - Order ${orderId}.pdf"`
-            );
-            res.setHeader("Content-Length", pdfBuffer.length);
+                `attachment; filename="Shipping Label - Order ${orderId}.pdf"`,
+            )
+            res.setHeader("Content-Length", pdfBuffer.length)
 
             // Send PDF buffer
-            res.send(pdfBuffer);
+            res.send(pdfBuffer)
         } catch (error) {
             const cleanMessage = `Error in downloadShippingLabel: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to download shipping label. ${errorMessage}`
-                    })
+                        error: `Failed to download shipping label. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("get-coupons")
     async getCoupons(@Body() body: any) {
         try {
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const {
                 products,
                 token,
@@ -2145,55 +2145,55 @@ export class OrderController {
                 fromEndDate,
                 toEndDate,
                 users,
-                isActive
-            } = decryptedBody;
+                isActive,
+            } = decryptedBody
             if (!Array.isArray(products) || !Array.isArray(users)) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Products array and Token are required."
-                        })
+                            error: "Products array and Token are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
-            let userId = null;
+            let userId = null
             if (token) {
                 // Verify token and find user
-                jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret");
+                jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret")
                 const userSession = await UserSession.findOne({
-                    where: { token, isExpired: false }
-                });
+                    where: { token, isExpired: false },
+                })
                 if (!userSession) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Invalid or expired token."
-                            })
+                                error: "Invalid or expired token.",
+                            }),
                         },
-                        HttpStatus.UNAUTHORIZED
-                    );
+                        HttpStatus.UNAUTHORIZED,
+                    )
                 }
                 // Check expiry
                 if (new Date() > userSession.expiry) {
-                    await userSession.update({ isExpired: true });
+                    await userSession.update({ isExpired: true })
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Session expired."
-                            })
+                                error: "Session expired.",
+                            }),
                         },
-                        HttpStatus.FORBIDDEN
-                    );
+                        HttpStatus.FORBIDDEN,
+                    )
                 }
-                userId = userSession.toJSON().userId;
+                userId = userSession.toJSON().userId
             }
             // Call SP to update coupon users for all users
-            await Sequelize.query("CALL UpdateCouponUsersForAllUsers()");
+            await Sequelize.query("CALL UpdateCouponUsersForAllUsers()")
 
             // Prepare parameters for SP
-            const p_products = products?.length > 0 ? products.join(",") : null;
-            const p_users = users?.length > 0 ? users.join(",") : null;
+            const p_products = products?.length > 0 ? products.join(",") : null
+            const p_users = users?.length > 0 ? users.join(",") : null
             // Call SP
             const results = await Sequelize.query(
                 "CALL GetFilteredCoupons(:userId, :products, :couponCode, :fromStartDate, :toStartDate, :fromEndDate, :toEndDate, :users, :isActive)",
@@ -2207,19 +2207,19 @@ export class OrderController {
                         fromEndDate: fromEndDate || null,
                         toEndDate: toEndDate || null,
                         users: p_users,
-                        isActive: isActive ?? null
-                    }
-                }
-            );
-            const couponIdsStr = (results[0] as any)?.couponIds;
+                        isActive: isActive ?? null,
+                    },
+                },
+            )
+            const couponIdsStr = (results[0] as any)?.couponIds
             const couponIds = couponIdsStr
                 ? couponIdsStr.split(",").map(Number)
-                : [];
+                : []
             if (couponIds.length === 0) {
                 const encryptedResponse = {
-                    response: encryptPayload({ coupons: [] })
-                };
-                return encryptedResponse;
+                    response: encryptPayload({ coupons: [] }),
+                }
+                return encryptedResponse
             }
 
             // Find coupons with associations
@@ -2229,7 +2229,7 @@ export class OrderController {
                     {
                         model: User,
                         required: false,
-                        as: "users"
+                        as: "users",
                     },
                     {
                         model: CouponProducts,
@@ -2237,35 +2237,35 @@ export class OrderController {
                         include: [
                             {
                                 model: Product,
-                                include: [ProductImage, Category]
-                            }
-                        ]
+                                include: [ProductImage, Category],
+                            },
+                        ],
                     },
                     {
                         model: CouponDiscounts,
-                        required: false
-                    }
-                ]
-            });
+                        required: false,
+                    },
+                ],
+            })
             // Filter coupons based on user association
             const filteredCoupons = coupons.filter((coupon) => {
-                const couponJSON = coupon.toJSON();
+                const couponJSON = coupon.toJSON()
                 return userId === null
                     ? couponJSON.isForNewUsers === true
-                    : couponJSON.users?.some((u: any) => u.id === userId);
-            });
+                    : couponJSON.users?.some((u: any) => u.id === userId)
+            })
 
             // Format coupons
             const formattedCoupons = filteredCoupons.map((coupon) => {
-                const couponJSON = coupon.toJSON();
+                const couponJSON = coupon.toJSON()
                 return {
                     id: couponJSON.id,
                     code: couponJSON.code,
                     startDate: new Date(
-                        couponJSON.startDate
+                        couponJSON.startDate,
                     ).toLocaleDateString("en-GB"),
                     endDate: new Date(couponJSON.endDate).toLocaleDateString(
-                        "en-GB"
+                        "en-GB",
                     ),
                     isActive: couponJSON.isActive,
                     isGroupable: couponJSON.isGroupable,
@@ -2276,7 +2276,7 @@ export class OrderController {
                             id: discount.id,
                             name: discount.name,
                             discount: discount.discount,
-                            flatrate: discount.flatrate
+                            flatrate: discount.flatrate,
                         })) || [],
                     products:
                         couponJSON.CouponProducts?.map((cp: any) => ({
@@ -2284,47 +2284,47 @@ export class OrderController {
                             name: cp.Product?.name,
                             tagline: cp.Product?.tagline,
                             image: cp.Product?.ProductImages?.[0]?.fileName,
-                            category: cp.Product?.Category?.category
+                            category: cp.Product?.Category?.category,
                         })) || [],
                     users:
                         couponJSON.users?.map((u: any) => ({
                             id: u.id,
                             name: u.name,
                             phone: u.phone,
-                            email: u.email
-                        })) || []
-                };
-            });
+                            email: u.email,
+                        })) || [],
+                }
+            })
 
             const encryptedResponse = {
-                response: encryptPayload({ coupons: formattedCoupons })
-            };
-            return encryptedResponse;
+                response: encryptPayload({ coupons: formattedCoupons }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getCoupons: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch coupons. ${errorMessage}`
-                    })
+                        error: `Failed to fetch coupons. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -2332,10 +2332,10 @@ export class OrderController {
     @UseInterceptors(FileInterceptor("photo"))
     async saveOrUpdateReview(
         @Body() body: any,
-        @UploadedFile() photo: Express.Multer.File
+        @UploadedFile() photo: Express.Multer.File,
     ) {
         try {
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const {
                 id,
                 name,
@@ -2347,7 +2347,7 @@ export class OrderController {
                 highlight,
                 location,
                 reviewDate,
-                filePath
+                filePath,
             } = decryptedBody as {
                 id?: number
                 name: string
@@ -2360,29 +2360,29 @@ export class OrderController {
                 location?: string
                 reviewDate?: string
                 filePath: string
-            };
+            }
             // Validate mandatory fields
             if (!name || !phone) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Name and Phone are required."
-                        })
+                            error: "Name and Phone are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Check if trying to set highlight to true
             if (highlight === true) {
                 // Count existing highlighted reviews
                 const highlightedCount = await Review.count({
-                    where: { highlight: true }
-                });
+                    where: { highlight: true },
+                })
 
                 // If updating an existing review that is already highlighted, don't count it
                 if (id) {
-                    const existingReview = await Review.findByPk(id);
+                    const existingReview = await Review.findByPk(id)
                     if (existingReview && existingReview.toJSON().highlight) {
                         // This review is already highlighted, so it's counted in the total
                         // We need to check if there are 10 OTHER highlighted reviews
@@ -2390,11 +2390,11 @@ export class OrderController {
                             throw new HttpException(
                                 {
                                     error: encryptPayload({
-                                        error: "max number of highlighted reviews is 10"
-                                    })
+                                        error: "max number of highlighted reviews is 10",
+                                    }),
                                 },
-                                HttpStatus.BAD_REQUEST
-                            );
+                                HttpStatus.BAD_REQUEST,
+                            )
                         }
                     } else {
                         // This is a new highlight, check if we already have 10
@@ -2402,11 +2402,11 @@ export class OrderController {
                             throw new HttpException(
                                 {
                                     error: encryptPayload({
-                                        error: "max number of highlighted reviews is 10"
-                                    })
+                                        error: "max number of highlighted reviews is 10",
+                                    }),
                                 },
-                                HttpStatus.BAD_REQUEST
-                            );
+                                HttpStatus.BAD_REQUEST,
+                            )
                         }
                     }
                 } else {
@@ -2415,38 +2415,38 @@ export class OrderController {
                         throw new HttpException(
                             {
                                 error: encryptPayload({
-                                    error: "max number of highlighted reviews is 10"
-                                })
+                                    error: "max number of highlighted reviews is 10",
+                                }),
                             },
-                            HttpStatus.BAD_REQUEST
-                        );
+                            HttpStatus.BAD_REQUEST,
+                        )
                     }
                 }
             }
 
-            let reviewRecord: Review;
-            let photoPath: string | null = null;
+            let reviewRecord: Review
+            let photoPath: string | null = null
 
             if (id) {
                 // Update existing review
-                reviewRecord = await Review.findByPk(id);
+                reviewRecord = await Review.findByPk(id)
                 if (!reviewRecord) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Review not found."
-                            })
+                                error: "Review not found.",
+                            }),
                         },
-                        HttpStatus.NOT_FOUND
-                    );
+                        HttpStatus.NOT_FOUND,
+                    )
                 }
                 if (Boolean(filePath) === false) {
                     const oldPhotoPath = path.join(
                         process.env.STATIC_PATH || "",
-                        reviewRecord.toJSON().photo
-                    );
+                        reviewRecord.toJSON().photo,
+                    )
                     if (existsSync(oldPhotoPath)) {
-                        unlinkSync(oldPhotoPath);
+                        unlinkSync(oldPhotoPath)
                     }
                 }
                 await reviewRecord.update({
@@ -2462,9 +2462,9 @@ export class OrderController {
                         photoPath !== null
                             ? photoPath
                             : Boolean(filePath) === true
-                                ? reviewRecord.toJSON().photo
-                                : null
-                });
+                              ? reviewRecord.toJSON().photo
+                              : null,
+                })
             } else {
                 // Create new review
                 reviewRecord = await Review.create({
@@ -2476,54 +2476,54 @@ export class OrderController {
                     highlight: highlight ?? false,
                     location,
                     reviewDate: reviewDate ? new Date(reviewDate) : null,
-                    photo: null
-                });
+                    photo: null,
+                })
                 // Reload to get the updated instance
-                reviewRecord = await Review.findByPk(reviewRecord.id);
+                reviewRecord = await Review.findByPk(reviewRecord.id)
             }
             // Handle products (many-to-many relationship)
             if (Array.isArray(products) && products.length > 0) {
                 // Remove existing product associations
                 await ReviewProduct.destroy({
-                    where: { reviewId: reviewRecord.toJSON().id }
-                });
+                    where: { reviewId: reviewRecord.toJSON().id },
+                })
 
                 // Create new product associations
                 const reviewProducts = products.map((productId) => ({
                     reviewId: reviewRecord.toJSON().id,
-                    productId
-                }));
-                await ReviewProduct.bulkCreate(reviewProducts);
+                    productId,
+                }))
+                await ReviewProduct.bulkCreate(reviewProducts)
             }
 
             // Handle photo upload if provided
             if (photo) {
                 // Delete old photo if exists
-                const existingReview = reviewRecord.toJSON();
+                const existingReview = reviewRecord.toJSON()
                 if (existingReview.photo) {
                     try {
                         const oldPhotoPath = path.join(
                             process.env.STATIC_PATH || "",
-                            existingReview.photo
-                        );
+                            existingReview.photo,
+                        )
                         if (existsSync(oldPhotoPath)) {
-                            unlinkSync(oldPhotoPath);
+                            unlinkSync(oldPhotoPath)
                         }
                     } catch (err) {
                         logger.error(
                             new Error(
-                                `Failed to delete old review photo: ${err.message}`
-                            )
-                        );
+                                `Failed to delete old review photo: ${err.message}`,
+                            ),
+                        )
                     }
                 }
                 // Save new photo with review ID prefix
                 photoPath = await saveFile(
                     photo,
                     "reviews",
-                    id ?? reviewRecord.toJSON().id
-                );
-                await reviewRecord.update({ photo: photoPath });
+                    id ?? reviewRecord.toJSON().id,
+                )
+                await reviewRecord.update({ photo: photoPath })
             }
 
             const encryptedResponse = {
@@ -2531,42 +2531,42 @@ export class OrderController {
                     review: reviewRecord,
                     message: id
                         ? "Review updated successfully."
-                        : "Review created successfully."
-                })
-            };
-            return encryptedResponse;
+                        : "Review created successfully.",
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in saveOrUpdateReview: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to save or update review. ${errorMessage}`
-                    })
+                        error: `Failed to save or update review. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("get-reviews")
     async getAllReviews(@Body() body: any) {
         try {
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const {
                 highlight,
                 products,
@@ -2575,7 +2575,7 @@ export class OrderController {
                 fromDate,
                 toDate,
                 rating,
-                location
+                location,
             } = decryptedBody as {
                 highlight?: boolean
                 products?: number[]
@@ -2585,93 +2585,93 @@ export class OrderController {
                 toDate?: string
                 rating?: number
                 location?: string
-            };
+            }
 
             // Build where clause based on highlight filter
-            const whereClause: any = {};
+            const whereClause: any = {}
 
             // If highlight is passed, filter by highlight value
             // If highlight is NOT passed, default to showing only highlighted reviews (highlight = true)
             if (highlight === true) {
-                whereClause.highlight = highlight;
+                whereClause.highlight = highlight
             } else if (highlight === false) {
-                delete whereClause.highlight;
+                delete whereClause.highlight
             } else {
-                whereClause.highlight = true;
+                whereClause.highlight = true
             }
 
             // Name filter - case insensitive contains search
             if (name && name.trim()) {
-                whereClause[Op.and] = whereClause[Op.and] || [];
+                whereClause[Op.and] = whereClause[Op.and] || []
                 whereClause[Op.and].push(
                     sequelize.where(
                         sequelize.fn("LOWER", sequelize.col("Review.name")),
                         {
-                            [Op.like]: `%${name.toLowerCase().trim()}%`
-                        }
-                    )
-                );
+                            [Op.like]: `%${name.toLowerCase().trim()}%`,
+                        },
+                    ),
+                )
             }
 
             // Location filter - case insensitive contains search
             if (location && location.trim()) {
-                whereClause[Op.and] = whereClause[Op.and] || [];
+                whereClause[Op.and] = whereClause[Op.and] || []
                 whereClause[Op.and].push(
                     sequelize.where(
                         sequelize.fn("LOWER", sequelize.col("Review.location")),
                         {
-                            [Op.like]: `%${location.toLowerCase().trim()}%`
-                        }
-                    )
-                );
+                            [Op.like]: `%${location.toLowerCase().trim()}%`,
+                        },
+                    ),
+                )
             }
 
             // Date range filter - updatedAt between fromDate and toDate
             if (fromDate || toDate) {
-                whereClause.updatedAt = {};
-                whereClause.reviewDate = {};
+                whereClause.updatedAt = {}
+                whereClause.reviewDate = {}
                 if (fromDate) {
                     whereClause.reviewDate = {
                         ...whereClause.reviewDate,
-                        [Op.gte]: new Date(fromDate)
-                    };
+                        [Op.gte]: new Date(fromDate),
+                    }
                     whereClause.updatedAt = {
                         ...whereClause.updatedAt,
-                        [Op.gte]: new Date(fromDate)
-                    };
+                        [Op.gte]: new Date(fromDate),
+                    }
                 }
                 if (toDate) {
                     // Set to end of day for toDate
-                    const toDateObj = new Date(toDate);
-                    toDateObj.setHours(23, 59, 59, 999);
+                    const toDateObj = new Date(toDate)
+                    toDateObj.setHours(23, 59, 59, 999)
                     whereClause.reviewDate = {
                         ...whereClause.reviewDate,
-                        [Op.lte]: toDateObj
-                    };
+                        [Op.lte]: toDateObj,
+                    }
                     whereClause.updatedAt = {
                         ...whereClause.updatedAt,
-                        [Op.lte]: toDateObj
-                    };
+                        [Op.lte]: toDateObj,
+                    }
                 }
             }
             // Rating filter - rating >= N AND rating < N+1
             if (rating !== undefined && rating !== null) {
                 whereClause.rating = {
-                    [Op.and]: [{ [Op.gte]: rating }, { [Op.lt]: rating + 1 }]
-                };
+                    [Op.and]: [{ [Op.gte]: rating }, { [Op.lt]: rating + 1 }],
+                }
             }
 
             // Location filter - case insensitive contains search
             if (location && location.trim()) {
-                whereClause[Op.and] = whereClause[Op.and] || [];
+                whereClause[Op.and] = whereClause[Op.and] || []
                 whereClause[Op.and].push(
                     sequelize.where(
                         sequelize.fn("LOWER", sequelize.col("Review.location")),
                         {
-                            [Op.like]: `%${location.toLowerCase().trim()}%`
-                        }
-                    )
-                );
+                            [Op.like]: `%${location.toLowerCase().trim()}%`,
+                        },
+                    ),
+                )
             }
 
             // Build the base review query
@@ -2681,232 +2681,232 @@ export class OrderController {
                     {
                         model: Product,
                         as: "products",
-                        through: { attributes: [] }
-                    }
+                        through: { attributes: [] },
+                    },
                 ],
                 order: [["id", "DESC"]],
-                limit: limit || 100
-            };
+                limit: limit || 100,
+            }
 
             // If productids are passed, filter by product IDs via ReviewProduct junction table
             if (Array.isArray(products) && products.length > 0) {
                 // Find reviews that have any of the specified products (OR condition)
                 const reviewProducts = await ReviewProduct.findAll({
                     where: {
-                        productId: { [Op.in]: products }
-                    }
-                });
+                        productId: { [Op.in]: products },
+                    },
+                })
 
                 const reviewIds = [
                     ...new Set(
-                        reviewProducts.map((rp) => rp.toJSON().reviewId)
-                    )
-                ];
+                        reviewProducts.map((rp) => rp.toJSON().reviewId),
+                    ),
+                ]
 
                 // Add review ID filter to the where clause
-                reviewFindOptions.where.id = { [Op.in]: reviewIds };
+                reviewFindOptions.where.id = { [Op.in]: reviewIds }
             }
 
-            const reviews = await Review.findAll(reviewFindOptions);
+            const reviews = await Review.findAll(reviewFindOptions)
 
             const encryptedResponse = {
-                response: encryptPayload({ reviews })
-            };
-            return encryptedResponse;
+                response: encryptPayload({ reviews }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getAllReviews: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch reviews. ${errorMessage}`
-                    })
+                        error: `Failed to fetch reviews. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("get-reviews-by-product")
     async getReviewsByProduct(@Body() body: any) {
         try {
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const { productIds } = decryptedBody as {
                 productIds: number[]
-            };
+            }
 
             if (!Array.isArray(productIds) || productIds.length === 0) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Product IDs array is required."
-                        })
+                            error: "Product IDs array is required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Find reviews that have any of the specified products (OR condition)
             const reviewProducts = await ReviewProduct.findAll({
                 where: {
-                    productId: { [Op.in]: productIds }
-                }
-            });
+                    productId: { [Op.in]: productIds },
+                },
+            })
 
             const reviewIds = [
-                ...new Set(reviewProducts.map((rp) => rp.toJSON().reviewId))
-            ];
+                ...new Set(reviewProducts.map((rp) => rp.toJSON().reviewId)),
+            ]
 
             const reviews = await Review.findAll({
                 where: {
-                    id: { [Op.in]: reviewIds }
+                    id: { [Op.in]: reviewIds },
                 },
                 include: [
                     {
                         model: Product,
                         as: "products",
-                        through: { attributes: [] }
-                    }
+                        through: { attributes: [] },
+                    },
                 ],
-                order: [["id", "DESC"]]
-            });
+                order: [["id", "DESC"]],
+            })
 
             const encryptedResponse = {
-                response: encryptPayload({ reviews })
-            };
-            return encryptedResponse;
+                response: encryptPayload({ reviews }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in getReviewsByProduct: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
                         error: `Failed to fetch reviews by product. ${
                             errorMessage
-                        }`
-                    })
+                        }`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("delete-review")
     async deleteReview(@Body() body: any) {
         try {
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const { ids } = decryptedBody as {
                 ids: number[]
-            };
+            }
 
             if (!Array.isArray(ids) || ids.length === 0) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Review IDs array is required."
-                        })
+                            error: "Review IDs array is required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Fetch reviews to get photo paths before deletion
             const reviews = await Review.findAll({
-                where: { id: { [Op.in]: ids } }
-            });
+                where: { id: { [Op.in]: ids } },
+            })
 
             // Delete photo files
             for (const review of reviews) {
-                const reviewData = review.toJSON();
+                const reviewData = review.toJSON()
                 if (reviewData.photo) {
                     try {
                         const photoPath = path.join(
                             process.env.STATIC_PATH || "",
-                            reviewData.photo
-                        );
+                            reviewData.photo,
+                        )
                         if (existsSync(photoPath)) {
-                            unlinkSync(photoPath);
+                            unlinkSync(photoPath)
                         }
                     } catch (err) {
                         logger.error(
                             new Error(
-                                `Failed to delete review photo: ${err.message}`
-                            )
-                        );
+                                `Failed to delete review photo: ${err.message}`,
+                            ),
+                        )
                     }
                 }
             }
 
             // Delete review products (junction table records)
             await ReviewProduct.destroy({
-                where: { reviewId: { [Op.in]: ids } }
-            });
+                where: { reviewId: { [Op.in]: ids } },
+            })
 
             // Delete reviews
             await Review.destroy({
-                where: { id: { [Op.in]: ids } }
-            });
+                where: { id: { [Op.in]: ids } },
+            })
 
             const encryptedResponse = {
                 response: encryptPayload({
                     message: "Reviews deleted successfully.",
-                    deletedCount: reviews.length
-                })
-            };
-            return encryptedResponse;
+                    deletedCount: reviews.length,
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in deleteReview: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
 
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to delete review. ${errorMessage}`
-                    })
+                        error: `Failed to delete review. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 }

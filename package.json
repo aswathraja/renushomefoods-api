@@ -10,9 +10,9 @@
     "scripts": {
         "format": "prettier --write .",
         "format:check": "prettier --check . --ignore-unknown",
-        "prepare": "sh -c 'mkdir -p .git/hooks && cp -r scripts/hooks/. .git/hooks/ && chmod +x .git/hooks/*' || true",
+        "prepare": "node scripts/prepare.mjs || true",
         "build": "nest build",
-        "start": "rm -rf dist tsconfig.build.tsbuildinfo && nest start",
+        "start": "node scripts/start.mjs",
         "start:dev": "nest start --watch",
         "start:debug": "nest start --debug --watch",
         "start:prod": "node dist/main",

@@ -1,14 +1,12 @@
 {
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true,
-    "assets": [
-      { "include": "/web/**/*",
-        "outDir": "/dist/web"
-    }, {"include": "templates/**/*",
-        "outDir": "dist"}
-    ]
-  }
+    "$schema": "https://json.schemastore.org/nest-cli",
+    "collection": "@nestjs/schematics",
+    "sourceRoot": "src",
+    "compilerOptions": {
+        "deleteOutDir": true,
+        "assets": [
+            { "include": "/web/**/*", "outDir": "/dist/web" },
+            { "include": "templates/**/*", "outDir": "dist" }
+        ]
+    }
 }

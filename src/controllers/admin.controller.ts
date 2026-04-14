@@ -8,15 +8,15 @@ import {
     Post,
     Res,
     UploadedFile,
-    UseInterceptors
-} from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
-import ExcelJS from "exceljs";
-import type { Response } from "express";
-import * as jwt from "jsonwebtoken";
-import { Op } from "sequelize";
-import { sequelize } from "../database/db";
-import { logger } from "../logger/logger";
+    UseInterceptors,
+} from "@nestjs/common"
+import { FileInterceptor } from "@nestjs/platform-express"
+import ExcelJS from "exceljs"
+import type { Response } from "express"
+import * as jwt from "jsonwebtoken"
+import { Op } from "sequelize"
+import { sequelize } from "../database/db"
+import { logger } from "../logger/logger"
 import {
     AdCampaign,
     AdCampaignUsers,
@@ -34,26 +34,26 @@ import {
     User,
     UserAddress,
     UserRole,
-    UserSession
-} from "../models/models";
-import { AppService } from "../services/app.service";
-import { AdminDashboardPdfService } from "../services/dashboard.service";
+    UserSession,
+} from "../models/models"
+import { AppService } from "../services/app.service"
+import { AdminDashboardPdfService } from "../services/dashboard.service"
 import {
     decryptPayload,
     deleteFileIfExists,
     encryptPayload,
     hashPassword,
     sanitizeStringToNumber,
-    saveFile
-} from "../utils/utils";
+    saveFile,
+} from "../utils/utils"
 
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"
 
 @Controller("admin")
 export class AdminController {
     constructor(
         private appService: AppService,
-        private pdfService: AdminDashboardPdfService
+        private pdfService: AdminDashboardPdfService,
     ) {}
 
     // Helper method to reduce PriceList quantity by 1 for each product in the order
@@ -61,20 +61,20 @@ export class AdminController {
     private async reduceInventoryForProducts(products: any[]): Promise<void> {
         for (const prod of products) {
             try {
-                const priceList = await PriceList.findByPk(prod.priceListId);
+                const priceList = await PriceList.findByPk(prod.priceListId)
                 if (priceList && priceList.toJSON().quantity > 0) {
-                    const currentQuantity = priceList.toJSON().quantity;
+                    const currentQuantity = priceList.toJSON().quantity
                     await priceList.update({
-                        quantity: currentQuantity - 1
-                    });
+                        quantity: currentQuantity - 1,
+                    })
                     logger.info(
-                        `Reduced quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity - 1}`
-                    );
+                        `Reduced quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity - 1}`,
+                    )
                 }
             } catch (error) {
                 logger.error(
-                    `Failed to reduce inventory for PriceList ${prod.priceListId}: ${error.message}`
-                );
+                    `Failed to reduce inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
             }
         }
     }
@@ -84,20 +84,20 @@ export class AdminController {
     private async increaseInventoryForProducts(products: any[]): Promise<void> {
         for (const prod of products) {
             try {
-                const priceList = await PriceList.findByPk(prod.priceListId);
+                const priceList = await PriceList.findByPk(prod.priceListId)
                 if (priceList) {
-                    const currentQuantity = priceList.toJSON().quantity || 0;
+                    const currentQuantity = priceList.toJSON().quantity || 0
                     await priceList.update({
-                        quantity: currentQuantity + 1
-                    });
+                        quantity: currentQuantity + 1,
+                    })
                     logger.info(
-                        `Increased quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity + 1} (order cancelled)`
-                    );
+                        `Increased quantity for PriceList ${prod.priceListId} from ${currentQuantity} to ${currentQuantity + 1} (order cancelled)`,
+                    )
                 }
             } catch (error) {
                 logger.error(
-                    `Failed to increase inventory for PriceList ${prod.priceListId}: ${error.message}`
-                );
+                    `Failed to increase inventory for PriceList ${prod.priceListId}: ${error.message}`,
+                )
             }
         }
     }
@@ -105,66 +105,66 @@ export class AdminController {
     // Common function to authenticate if the user has admin role (roleId 1)
     async authenticateAdmin(authHeader: string): Promise<any> {
         // Extract token from Authorization header
-        const token = authHeader?.replace("Bearer ", "") || "";
+        const token = authHeader?.replace("Bearer ", "") || ""
         if (!token) {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: "Authorization header is required."
-                    })
+                        error: "Authorization header is required.",
+                    }),
                 },
-                HttpStatus.BAD_REQUEST
-            );
+                HttpStatus.BAD_REQUEST,
+            )
         }
 
         try {
             // Verify JWT token validity
-            jwt.verify(token, JWT_SECRET);
+            jwt.verify(token, JWT_SECRET)
         } catch {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: "Invalid or expired token."
-                    })
+                        error: "Invalid or expired token.",
+                    }),
                 },
-                HttpStatus.UNAUTHORIZED
-            );
+                HttpStatus.UNAUTHORIZED,
+            )
         }
 
         // Check if token exists in DB and is not expired
         const session = await UserSession.findOne({
             where: {
                 token,
-                isExpired: false
-            }
-        });
+                isExpired: false,
+            },
+        })
 
         if (!session) {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: "Session not found or expired."
-                    })
+                        error: "Session not found or expired.",
+                    }),
                 },
-                HttpStatus.FORBIDDEN
-            );
+                HttpStatus.FORBIDDEN,
+            )
         }
 
         // Check expiry
         if (new Date() > session.expiry) {
-            await session.update({ isExpired: true });
+            await session.update({ isExpired: true })
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: "Session expired."
-                    })
+                        error: "Session expired.",
+                    }),
                 },
-                HttpStatus.FORBIDDEN
-            );
+                HttpStatus.FORBIDDEN,
+            )
         }
 
         // Get userId from session
-        const {userId} = session.toJSON();
+        const { userId } = session.toJSON()
 
         // Fetch user with roles
         const user = await User.findByPk(userId, {
@@ -172,48 +172,48 @@ export class AdminController {
                 {
                     model: Role,
                     as: "roles",
-                    through: { attributes: [] } // exclude junction table attributes
-                }
-            ]
-        });
+                    through: { attributes: [] }, // exclude junction table attributes
+                },
+            ],
+        })
 
         if (!user) {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: "User not found."
-                    })
+                        error: "User not found.",
+                    }),
                 },
-                HttpStatus.NOT_FOUND
-            );
+                HttpStatus.NOT_FOUND,
+            )
         }
 
         // Check if user has admin role (roleId 1)
-        const roles = user.toJSON().roles || [];
-        const isAdmin = roles.some((role: any) => role.id === 1);
+        const roles = user.toJSON().roles || []
+        const isAdmin = roles.some((role: any) => role.id === 1)
         if (!isAdmin) {
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: "Access denied. Admin role required."
-                    })
+                        error: "Access denied. Admin role required.",
+                    }),
                 },
-                HttpStatus.FORBIDDEN
-            );
+                HttpStatus.FORBIDDEN,
+            )
         }
 
-        return user;
+        return user
     }
 
     @Post("ad-campaigns")
     async getAllAdCampaigns(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request to extract filters
             const {
@@ -224,42 +224,42 @@ export class AdminController {
                 toEndDate,
                 subject,
                 message,
-                users
-            } = decryptPayload(body.request);
+                users,
+            } = decryptPayload(body.request)
             // Adjust dates to be timezone agnostic and filter by date only
-            let adjustedFromStartDate = fromStartDate;
-            let adjustedToStartDate = toStartDate;
-            let adjustedFromEndDate = fromEndDate;
-            let adjustedToEndDate = toEndDate;
+            let adjustedFromStartDate = fromStartDate
+            let adjustedToStartDate = toStartDate
+            let adjustedFromEndDate = fromEndDate
+            let adjustedToEndDate = toEndDate
             if (fromStartDate) {
                 adjustedFromStartDate = new Date(
-                    `${fromStartDate}T00:00:00.000Z`
+                    `${fromStartDate}T00:00:00.000Z`,
                 )
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (toStartDate) {
                 adjustedToStartDate = new Date(`${toStartDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (fromEndDate) {
                 adjustedFromEndDate = new Date(`${fromEndDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (toEndDate) {
                 adjustedToEndDate = new Date(`${toEndDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
 
             // Convert users array to CSV string
-            const userIds = Array.isArray(users) ? users.join(",") : "";
+            const userIds = Array.isArray(users) ? users.join(",") : ""
             // Call stored procedure
             const results = await sequelize.query(
                 "CALL GetAdCampaigns(:name, :fromStartDate, :endStartDate, :fromEndDate, :toEndDate, :subject, :message, :userIds)",
@@ -272,15 +272,15 @@ export class AdminController {
                         toEndDate: adjustedToEndDate || null,
                         subject: subject || null,
                         message: message || null,
-                        userIds: userIds || null
-                    }
-                }
-            );
+                        userIds: userIds || null,
+                    },
+                },
+            )
 
             // Group users by adCampaignId
             const campaignsMap: { [key: number]: any } = {}
             ;(results as any[]).forEach((row: any) => {
-                const {adCampaignId} = row;
+                const { adCampaignId } = row
                 if (!campaignsMap[adCampaignId]) {
                     campaignsMap[adCampaignId] = {
                         id: row.adCampaignId,
@@ -290,47 +290,47 @@ export class AdminController {
                         subject: row.subject,
                         message: row.message,
                         imagePath: row.imagePath,
-                        users: []
-                    };
+                        users: [],
+                    }
                 }
                 if (row.userId) {
                     campaignsMap[adCampaignId].users.push({
                         id: row.userId,
                         name: row.userName,
                         email: row.userEmail,
-                        phone: row.userPhone
-                    });
+                        phone: row.userPhone,
+                    })
                 }
-            });
-            const adCampaigns = Object.values(campaignsMap);
+            })
+            const adCampaigns = Object.values(campaignsMap)
 
             return {
-                response: encryptPayload({ adCampaigns })
-            };
+                response: encryptPayload({ adCampaigns }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getAllAdCampaigns: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch AdCampaigns. ${errorMessage}`
-                    })
+                        error: `Failed to fetch AdCampaigns. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -339,22 +339,22 @@ export class AdminController {
     @Post("get-ad-campaign")
     async getAdCampaignById(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
-            const { id } = decryptPayload(body.request);
+            const { id } = decryptPayload(body.request)
             if (!id) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Campaign id is required."
-                        })
+                            error: "Campaign id is required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             const adCampaign = await AdCampaign.findByPk(id, {
@@ -363,49 +363,49 @@ export class AdminController {
                         model: User,
                         as: "users",
                         through: { attributes: [] },
-                        attributes: ["id", "name", "email", "phone"]
-                    }
-                ]
-            });
+                        attributes: ["id", "name", "email", "phone"],
+                    },
+                ],
+            })
 
             if (!adCampaign) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "AdCampaign not found."
-                        })
+                            error: "AdCampaign not found.",
+                        }),
                     },
-                    HttpStatus.NOT_FOUND
-                );
+                    HttpStatus.NOT_FOUND,
+                )
             }
 
             return {
-                response: encryptPayload({ adCampaign })
-            };
+                response: encryptPayload({ adCampaign }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getAdCampaignById: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch AdCampaign by id. ${errorMessage}`
-                    })
+                        error: `Failed to fetch AdCampaign by id. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -414,12 +414,12 @@ export class AdminController {
     async saveOrUpdateAdCampaign(
         @UploadedFile() file: Express.Multer.File,
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
-            const decryptedBody = decryptPayload(body.request);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
+            const decryptedBody = decryptPayload(body.request)
             const {
                 id,
                 name,
@@ -428,8 +428,8 @@ export class AdminController {
                 message,
                 subject,
                 userIds,
-                imagePath
-            } = decryptedBody;
+                imagePath,
+            } = decryptedBody
 
             if (
                 !name ||
@@ -442,43 +442,43 @@ export class AdminController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Missing required fields: name, startDate, endDate, message, subject, userIds"
-                        })
+                            error: "Missing required fields: name, startDate, endDate, message, subject, userIds",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Deduplicate userIds to prevent duplicates in AdCampaignUsers
-            const uniqueUserIds = Array.from(new Set(userIds));
+            const uniqueUserIds = Array.from(new Set(userIds))
 
             // Ensure STATIC_PATH environment variable is set
-            const adsPath = process.env.STATIC_PATH;
+            const adsPath = process.env.STATIC_PATH
             if (!adsPath) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "STATIC_PATH environment variable is not set."
-                        })
+                            error: "STATIC_PATH environment variable is not set.",
+                        }),
                     },
-                    HttpStatus.INTERNAL_SERVER_ERROR
-                );
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                )
             }
 
-            let adCampaign: AdCampaign;
+            let adCampaign: AdCampaign
 
             if (id) {
                 // Update existing campaign
-                adCampaign = await AdCampaign.findByPk(id);
+                adCampaign = await AdCampaign.findByPk(id)
                 if (!adCampaign) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "AdCampaign not found for update."
-                            })
+                                error: "AdCampaign not found for update.",
+                            }),
                         },
-                        HttpStatus.NOT_FOUND
-                    );
+                        HttpStatus.NOT_FOUND,
+                    )
                 }
 
                 const updateData: any = {
@@ -486,56 +486,56 @@ export class AdminController {
                     startDate: new Date(startDate),
                     endDate: new Date(endDate),
                     message,
-                    subject
-                };
+                    subject,
+                }
 
                 if (file) {
                     // Delete old file if exists
-                    deleteFileIfExists(adCampaign.toJSON().imagePath as string);
+                    deleteFileIfExists(adCampaign.toJSON().imagePath as string)
                     // Save new file
                     const savedImagePath = await saveFile(
                         file,
                         "ads",
-                        adCampaign.toJSON()?.id
-                    );
+                        adCampaign.toJSON()?.id,
+                    )
                     // Add imagePath to update data
-                    updateData.imagePath = savedImagePath;
+                    updateData.imagePath = savedImagePath
                 } else if (Boolean(imagePath) === false) {
-                    deleteFileIfExists(adCampaign.toJSON().imagePath as string);
-                    updateData.imagePath = null;
+                    deleteFileIfExists(adCampaign.toJSON().imagePath as string)
+                    updateData.imagePath = null
                 }
 
                 // Update adCampaign using AdCampaign.update() method
                 await AdCampaign.update(updateData, {
-                    where: { id: adCampaign.toJSON().id }
-                });
+                    where: { id: adCampaign.toJSON().id },
+                })
 
                 // Instead of destroying all AdCampaignUsers, selectively update
 
                 // Fetch existing AdCampaignUsers for this campaign
                 const existingCampaignUsers = await AdCampaignUsers.findAll({
-                    where: { adCampaignId: adCampaign.toJSON().id }
-                });
+                    where: { adCampaignId: adCampaign.toJSON().id },
+                })
 
                 const existingUserIds = existingCampaignUsers.map(
-                    (acu) => acu.toJSON().userId
-                );
+                    (acu) => acu.toJSON().userId,
+                )
                 // Find userIds to add and remove
                 const userIdsToAdd = uniqueUserIds.filter(
-                    (userId: number) => !existingUserIds.includes(userId)
-                );
+                    (userId: number) => !existingUserIds.includes(userId),
+                )
                 const userIdsToRemove = existingUserIds.filter(
-                    (userId: number) => !uniqueUserIds.includes(userId)
-                );
+                    (userId: number) => !uniqueUserIds.includes(userId),
+                )
 
                 // Remove AdCampaignUsers not in the new userIds list
                 if (userIdsToRemove.length > 0) {
                     await AdCampaignUsers.destroy({
                         where: {
                             adCampaignId: adCampaign.toJSON().id,
-                            userId: userIdsToRemove
-                        }
-                    });
+                            userId: userIdsToRemove,
+                        },
+                    })
                 }
 
                 // Add new AdCampaignUsers that don't exist already
@@ -543,11 +543,11 @@ export class AdminController {
                 if (userIdsToAdd.length > 0) {
                     const recordsToCreate = userIdsToAdd.map((userId) => ({
                         adCampaignId: adCampaign.toJSON().id,
-                        userId
-                    }));
+                        userId,
+                    }))
                     await AdCampaignUsers.bulkCreate(recordsToCreate, {
-                        ignoreDuplicates: true // only if supported by Sequelize and underlying DB
-                    });
+                        ignoreDuplicates: true, // only if supported by Sequelize and underlying DB
+                    })
                 }
             } else {
                 // Creating new campaign - create first without image
@@ -557,32 +557,32 @@ export class AdminController {
                     endDate: new Date(endDate),
                     message,
                     subject,
-                    imagePath: null
-                });
+                    imagePath: null,
+                })
 
                 // Save file with the new campaign ID if file exists
-                let savedImagePath = null;
+                let savedImagePath = null
                 if (file) {
-                    savedImagePath = await saveFile(file, "ads", adCampaign.id);
+                    savedImagePath = await saveFile(file, "ads", adCampaign.id)
                     // Update campaign with imagePath
                     await AdCampaign.update(
                         { imagePath: savedImagePath },
-                        { where: { id: adCampaign.id } }
-                    );
+                        { where: { id: adCampaign.id } },
+                    )
                 }
 
                 // Deduplicate userIds before creating
-                const uniqueUserIdsForCreate = Array.from(new Set(userIds));
+                const uniqueUserIdsForCreate = Array.from(new Set(userIds))
 
                 const recordsToCreate = uniqueUserIdsForCreate.map(
                     (userId) => ({
                         adCampaignId: adCampaign.id,
-                        userId
-                    })
-                );
+                        userId,
+                    }),
+                )
                 await AdCampaignUsers.bulkCreate(recordsToCreate, {
-                    ignoreDuplicates: true
-                });
+                    ignoreDuplicates: true,
+                })
             }
 
             // Recommend adding a unique constraint on (adCampaignId, userId) at the DB level
@@ -593,122 +593,122 @@ export class AdminController {
                     id: adCampaign.id,
                     message: id
                         ? "AdCampaign updated successfully."
-                        : "AdCampaign created successfully."
-                })
-            };
+                        : "AdCampaign created successfully.",
+                }),
+            }
         } catch (error) {
             const cleanMessage = `Error in saveOrUpdateAdCampaign: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
                         error: `Failed to save or update AdCampaign. ${
                             errorMessage
-                        }`
-                    })
+                        }`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("delete-ad-campaign")
     async deleteAdCampaign(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
-            const { id } = decryptPayload(body.request);
+            const { id } = decryptPayload(body.request)
 
             if (!id) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "AdCampaign id is required for deletion."
-                        })
+                            error: "AdCampaign id is required for deletion.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
-            const adCampaign = await AdCampaign.findByPk(id);
+            const adCampaign = await AdCampaign.findByPk(id)
             if (!adCampaign) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "AdCampaign not found."
-                        })
+                            error: "AdCampaign not found.",
+                        }),
                     },
-                    HttpStatus.NOT_FOUND
-                );
+                    HttpStatus.NOT_FOUND,
+                )
             }
 
             // Delete associated AdCampaignUsers
             await AdCampaignUsers.destroy({
-                where: { adCampaignId: adCampaign.toJSON().id }
-            });
+                where: { adCampaignId: adCampaign.toJSON().id },
+            })
 
             // Delete image file if exists
             if (adCampaign.toJSON().imagePath) {
                 try {
-                    deleteFileIfExists(adCampaign.toJSON().imagePath as string);
+                    deleteFileIfExists(adCampaign.toJSON().imagePath as string)
                 } catch (err) {
                     logger.error(
                         new Error(
-                            `Failed to delete ad campaign image file: ${err.message}`
-                        )
-                    );
+                            `Failed to delete ad campaign image file: ${err.message}`,
+                        ),
+                    )
                 }
             }
 
             // Delete the AdCampaign
-            await adCampaign.destroy();
+            await adCampaign.destroy()
 
             return {
                 response: encryptPayload({
-                    message: "AdCampaign deleted successfully."
-                })
-            };
+                    message: "AdCampaign deleted successfully.",
+                }),
+            }
         } catch (error) {
             const cleanMessage = `Error in deleteAdCampaign: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to delete AdCampaign. ${errorMessage}`
-                    })
+                        error: `Failed to delete AdCampaign. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -716,67 +716,67 @@ export class AdminController {
     async getRoles(@Headers() headers: Record<string, string>) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Fetch all roles
-            const roles = await Role.findAll();
+            const roles = await Role.findAll()
 
             // Return encrypted roles
             return {
-                response: encryptPayload({ roles })
-            };
+                response: encryptPayload({ roles }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getRoles: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
 
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch roles. ${errorMessage}`
-                    })
+                        error: `Failed to fetch roles. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("user-details")
     async getUserDetails(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request to get userId, email and phone (optional)
-            const decryptedBody = decryptPayload(body.request);
-            const { userId, email, phone } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { userId, email, phone } = decryptedBody
 
             if (!userId) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "userId is required"
-                        })
+                            error: "userId is required",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Find user by id including all addresses and roles except password
@@ -785,25 +785,25 @@ export class AdminController {
                 include: [
                     {
                         model: UserAddress,
-                        as: "UserAddresses"
+                        as: "UserAddresses",
                     },
                     {
                         model: Role,
                         as: "roles",
-                        through: { attributes: [] } // exclude junction table attributes
-                    }
-                ]
-            });
+                        through: { attributes: [] }, // exclude junction table attributes
+                    },
+                ],
+            })
 
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User not found"
-                        })
+                            error: "User not found",
+                        }),
                     },
-                    HttpStatus.NOT_FOUND
-                );
+                    HttpStatus.NOT_FOUND,
+                )
             }
 
             // Optional: validate email and phone if provided match the found user
@@ -814,54 +814,54 @@ export class AdminController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Provided email or phone does not match user"
-                        })
+                            error: "Provided email or phone does not match user",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Return encrypted user details with addresses and roles
             return {
-                response: encryptPayload({ user: user.toJSON() })
-            };
+                response: encryptPayload({ user: user.toJSON() }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getUserDetails: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
 
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch user details. ${errorMessage}`
-                    })
+                        error: `Failed to fetch user details. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("dashboard-kpis")
     async getDashboardKPIs(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request if needed, but assuming filters are in body.request
             const {
@@ -871,23 +871,23 @@ export class AdminController {
                 category,
                 product,
                 name,
-                phone
-            } = decryptPayload(body.request);
+                phone,
+            } = decryptPayload(body.request)
 
             // Adjust dates to be timezone agnostic and filter by date only
-            let adjustedFromDate = fromDate;
-            let adjustedToDate = toDate;
+            let adjustedFromDate = fromDate
+            let adjustedToDate = toDate
             if (fromDate) {
                 adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (toDate) {
                 adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
 
             // Call stored procedure
@@ -901,11 +901,11 @@ export class AdminController {
                         category: category || null,
                         product: product || null,
                         name: name || null,
-                        phone: phone || null
-                    }
-                }
-            );
-            const kpis = results as any;
+                        phone: phone || null,
+                    },
+                },
+            )
+            const kpis = results as any
 
             const response = {
                 totalSales: kpis.totalSales || 0,
@@ -914,48 +914,48 @@ export class AdminController {
                         ? kpis.totalSales / kpis.totalOrders
                         : 0,
                 totalOrders: kpis.totalOrders || 0,
-                pendingOrders: kpis.pendingOrders || 0
-            };
+                pendingOrders: kpis.pendingOrders || 0,
+            }
 
             return {
-                response: encryptPayload(response)
-            };
+                response: encryptPayload(response),
+            }
         } catch (error) {
             const cleanMessage = `Error in getDashboardKPIs: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch dashboard KPIs. ${errorMessage}`
-                    })
+                        error: `Failed to fetch dashboard KPIs. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("chart-data")
     async getChartData(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request to extract filters
             const {
@@ -965,34 +965,34 @@ export class AdminController {
                 category,
                 product,
                 name,
-                phone
-            } = decryptPayload(body.request);
+                phone,
+            } = decryptPayload(body.request)
 
             // Adjust dates to be timezone agnostic and filter by date only
-            let adjustedFromDate = fromDate;
-            let adjustedToDate = toDate;
+            let adjustedFromDate = fromDate
+            let adjustedToDate = toDate
             if (fromDate) {
                 adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (toDate) {
                 adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             // Define chart types
             const chartTypes = [
                 "Total Sales by Category",
                 "Total Sales by Product",
                 "Total Sales by Order Status",
-                "Products with Quantities by Order Status"
-            ];
+                "Products with Quantities by Order Status",
+            ]
 
             // Initialize response object
-            const chartData: any = {};
+            const chartData: any = {}
 
             // Call stored procedure for each chart type
             for (const chartType of chartTypes) {
@@ -1007,12 +1007,12 @@ export class AdminController {
                             product: product || null,
                             name: name || null,
                             phone: phone || null,
-                            chartType
-                        }
-                    }
-                );
+                            chartType,
+                        },
+                    },
+                )
 
-                let processedResults: any = results;
+                let processedResults: any = results
 
                 // Special processing for 'Products with Quantities by Order Status'
                 if (chartType === "Products with Quantities by Order Status") {
@@ -1027,28 +1027,28 @@ export class AdminController {
                             row.product ||
                             row.Product ||
                             row.productName ||
-                            row.ProductName;
+                            row.ProductName
 
                         if (!productMap[product]) {
                             productMap[product] = {
                                 pendingQuantity: 0,
-                                fulfilledQuantity: 0
-                            };
+                                fulfilledQuantity: 0,
+                            }
                         }
 
                         productMap[product].pendingQuantity +=
-                            Number(row.pendingQuantity) ?? 0;
+                            Number(row.pendingQuantity) ?? 0
                         productMap[product].fulfilledQuantity +=
-                            Number(row.fulfilledQuantity) ?? 0;
-                    });
+                            Number(row.fulfilledQuantity) ?? 0
+                    })
 
                     processedResults = Object.entries(productMap).map(
                         ([product, quantities]) => ({
                             product,
                             pendingQuantity: quantities.pendingQuantity,
-                            fulfilledQuantity: quantities.fulfilledQuantity
-                        })
-                    );
+                            fulfilledQuantity: quantities.fulfilledQuantity,
+                        }),
+                    )
                 } else {
                     // Add label for all other chart types (sales charts)
                     processedResults = (processedResults as any[]).map(
@@ -1057,62 +1057,62 @@ export class AdminController {
                                 row.category ||
                                 row.product ||
                                 row.orderStatus ||
-                                "";
-                            const totalSales = row.totalSales || 0;
+                                ""
+                            const totalSales = row.totalSales || 0
                             return {
                                 ...row,
-                                displayLabel: `${category} : ₹${sanitizeStringToNumber(totalSales).toFixed(2)}`
-                            };
-                        }
-                    );
+                                displayLabel: `${category} : ₹${sanitizeStringToNumber(totalSales).toFixed(2)}`,
+                            }
+                        },
+                    )
                 }
 
                 // Map chart type to key in response
                 const key = chartType
                     .toLowerCase()
                     .replace(/\s+/g, "")
-                    .replace(/[^a-zA-Z0-9]/g, "");
-                chartData[key] = processedResults;
+                    .replace(/[^a-zA-Z0-9]/g, "")
+                chartData[key] = processedResults
             }
             return {
-                response: encryptPayload(chartData)
-            };
+                response: encryptPayload(chartData),
+            }
         } catch (error) {
             const cleanMessage = `Error in getChartData: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch chart data. ${errorMessage}`
-                    })
+                        error: `Failed to fetch chart data. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("get-orders")
     async getOrders(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request to extract filters
             const {
@@ -1122,23 +1122,23 @@ export class AdminController {
                 category,
                 product,
                 name,
-                phone
-            } = decryptPayload(body.request);
+                phone,
+            } = decryptPayload(body.request)
 
             // Adjust dates to be timezone agnostic and filter by date only
-            let adjustedFromDate = fromDate;
-            let adjustedToDate = toDate;
+            let adjustedFromDate = fromDate
+            let adjustedToDate = toDate
             if (fromDate) {
                 adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (toDate) {
                 adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
 
             // Call stored procedure to fetch orders
@@ -1152,15 +1152,15 @@ export class AdminController {
                         category: category || null,
                         product: product || null,
                         name: name || null,
-                        phone: phone || null
-                    }
-                }
-            );
+                        phone: phone || null,
+                    },
+                },
+            )
 
             // Group products by orderId
             const ordersMap: { [key: number]: any } = {}
             ;(results as any[]).forEach((row: any) => {
-                const {orderId} = row;
+                const { orderId } = row
                 if (!ordersMap[orderId]) {
                     ordersMap[orderId] = {
                         orderId: row.orderId,
@@ -1189,8 +1189,8 @@ export class AdminController {
                         couponCode: row.couponCode,
                         productDiscount: row.productDiscount,
                         awb: row.awb,
-                        courier: row.courier
-                    };
+                        courier: row.courier,
+                    }
                 }
                 ordersMap[orderId].products.push({
                     quantity: row.quantity,
@@ -1201,53 +1201,53 @@ export class AdminController {
                     priceListId: row.priceListId,
                     productId: row.productId,
                     weight: row.productWeight,
-                    productDiscount: row.productDiscount
-                });
-            });
-            const orders = Object.values(ordersMap);
+                    productDiscount: row.productDiscount,
+                })
+            })
+            const orders = Object.values(ordersMap)
             // Calculate orderTotal for each order
             orders.forEach((order: any) => {
                 const orderTotal = order.products.reduce(
                     (sum: number, product: any) =>
                         sum + (product?.productTotal || 0),
-                    0
-                );
+                    0,
+                )
                 const productDiscount = order.products.reduce(
                     (sum: number, product: any) =>
                         sum + (product?.productDiscount || 0),
-                    0
-                );
-                order.orderTotal = orderTotal;
-                order.productDiscount = productDiscount;
-            });
+                    0,
+                )
+                order.orderTotal = orderTotal
+                order.productDiscount = productDiscount
+            })
 
             return {
-                response: encryptPayload({ orders })
-            };
+                response: encryptPayload({ orders }),
+            }
         } catch (error) {
             const cleanMessage = `Error in fetchOrders: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch orders. ${errorMessage}`
-                    })
+                        error: `Failed to fetch orders. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -1255,65 +1255,65 @@ export class AdminController {
     async getUsers(@Headers() headers: Record<string, string>) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Fetch all users with only name and phone
             const users = await User.findAll({
-                attributes: ["id", "name", "phone", "email"]
-            });
+                attributes: ["id", "name", "phone", "email"],
+            })
             return {
-                response: encryptPayload({ users })
-            };
+                response: encryptPayload({ users }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getUsers: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch users. ${errorMessage}`
-                    })
+                        error: `Failed to fetch users. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("users")
     async getUsersWithDefaultAddress(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt filters from request body
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const {
                 name,
                 phone,
                 email,
-                roles // roles array of role IDs
-            } = decryptedBody;
+                roles, // roles array of role IDs
+            } = decryptedBody
 
             // Call stored procedure to get filtered users (preferred for performance)
             // Convert roles array to CSV string
-            const roleIds = Array.isArray(roles) ? roles.join(",") : "";
+            const roleIds = Array.isArray(roles) ? roles.join(",") : ""
 
             const results = await sequelize.query(
                 "CALL GetUsersWithDefaultAddress(:name, :phone, :email, :roles)",
@@ -1322,54 +1322,54 @@ export class AdminController {
                         name: name || null,
                         phone: phone || null,
                         email: email || null,
-                        roles: roleIds || null
-                    }
-                }
-            );
+                        roles: roleIds || null,
+                    },
+                },
+            )
 
             return {
-                response: encryptPayload({ users: results })
-            };
+                response: encryptPayload({ users: results }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getUsersWithDefaultAddress: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
                         error: `Failed to fetch users with default address. ${
                             errorMessage
-                        }`
-                    })
+                        }`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("user-addresses")
     async getUserAddresses(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
-            const { userId } = decryptPayload(body.request);
+            const { userId } = decryptPayload(body.request)
             const addresses = await UserAddress.findAll({
                 where: { userId },
                 attributes: [
@@ -1380,51 +1380,51 @@ export class AdminController {
                     "state",
                     "country",
                     "pincode",
-                    "phone"
-                ]
-            });
+                    "phone",
+                ],
+            })
             return {
-                response: encryptPayload({ addresses })
-            };
+                response: encryptPayload({ addresses }),
+            }
         } catch (error) {
             const cleanMessage = `Error in getUserAddresses: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to fetch user addresses. ${errorMessage}`
-                    })
+                        error: `Failed to fetch user addresses. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("save-order")
     async saveOrder(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const {
                 orderId,
                 userAddressId,
@@ -1449,15 +1449,15 @@ export class AdminController {
                 paymentMethod,
                 couponId,
                 awb,
-                courier
-            } = decryptedBody;
+                courier,
+            } = decryptedBody
             // Step 1: Check if user exists by customerPhone, if not create user
             let user = await User.findOne({
-                where: { phone: customerPhone }
-            });
-            const isNewUser = Boolean(user);
+                where: { phone: customerPhone },
+            })
+            const isNewUser = Boolean(user)
             if (!user) {
-                const otp = Math.floor(1000 + Math.random() * 9000).toString();
+                const otp = Math.floor(1000 + Math.random() * 9000).toString()
                 user = await User.create({
                     name: customerName,
                     username: customerPhone,
@@ -1468,38 +1468,38 @@ export class AdminController {
                             .replace(/\s+/gim, "")}@renushomefoods.com`, // Assuming email not provided
                     phone: customerPhone,
                     password: "",
-                    otp
-                });
+                    otp,
+                })
                 user = await User.findOne({
                     where: {
                         phone: customerPhone,
-                        name: customerName
-                    }
-                });
+                        name: customerName,
+                    },
+                })
                 // Assign 'Buyer' role (roleId 2) to the user
-                let buyerRole = await Role.findByPk(2);
+                let buyerRole = await Role.findByPk(2)
                 if (!buyerRole) {
-                    buyerRole = await Role.create({ id: 2, name: "Buyer" });
+                    buyerRole = await Role.create({ id: 2, name: "Buyer" })
                 }
                 await UserRole.create({
                     userId: user.toJSON().id,
-                    roleId: 2
-                });
+                    roleId: 2,
+                })
             }
 
             // Step 2: Check userAddressId, if not provided create new address and set as default
-            let address;
+            let address
             if (userAddressId) {
-                address = await UserAddress.findByPk(userAddressId);
+                address = await UserAddress.findByPk(userAddressId)
                 if (!address || address.toJSON().userId !== user.toJSON().id) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Invalid userAddressId."
-                            })
+                                error: "Invalid userAddressId.",
+                            }),
                         },
-                        HttpStatus.BAD_REQUEST
-                    );
+                        HttpStatus.BAD_REQUEST,
+                    )
                 }
             } else {
                 // Create new address
@@ -1512,8 +1512,8 @@ export class AdminController {
                     country,
                     pincode,
                     phone: deliveryPhone,
-                    isDefault: !isNewUser
-                });
+                    isDefault: !isNewUser,
+                })
                 address = await UserAddress.findOne({
                     where: {
                         name: deliveryName,
@@ -1523,23 +1523,23 @@ export class AdminController {
                         country,
                         pincode,
                         phone: deliveryPhone,
-                        isDefault: !isNewUser
-                    }
-                });
+                        isDefault: !isNewUser,
+                    },
+                })
             }
             // Step 3: Handle cart
-            let cart;
+            let cart
             if (cartId) {
-                cart = await Cart.findByPk(cartId);
+                cart = await Cart.findByPk(cartId)
                 if (!cart || cart.userId !== user.toJSON().id) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Invalid cartId."
-                            })
+                                error: "Invalid cartId.",
+                            }),
                         },
-                        HttpStatus.BAD_REQUEST
-                    );
+                        HttpStatus.BAD_REQUEST,
+                    )
                 }
                 // Update cart status if needed
                 // await cart.update({ status: 'Created' })
@@ -1548,109 +1548,109 @@ export class AdminController {
                     userId: user.toJSON().id,
                     createdBy: "Admin",
                     updatedBy: "Admin",
-                    status: "Ordered"
-                });
+                    status: "Ordered",
+                })
             }
-            let isProductsModified = false;
+            let isProductsModified = false
             // Handle products: remove not in request, update/create those in request
             const existingCartProducts = await CartProduct.findAll({
                 where: { cartId: cart.toJSON().id },
-                include: [Product]
-            });
-            const productIdsInRequest = products.map((p: any) => p.productName);
+                include: [Product],
+            })
+            const productIdsInRequest = products.map((p: any) => p.productName)
             // Find products by name
             const productsInDB = await Product.findAll({
                 where: { name: { [Op.in]: productIdsInRequest } },
-                include: [PriceList]
-            });
-            const productMap = new Map();
+                include: [PriceList],
+            })
+            const productMap = new Map()
             productsInDB.forEach((prod: any) => {
-                productMap.set(prod.name, prod.toJSON());
-            });
+                productMap.set(prod.name, prod.toJSON())
+            })
             // Update or create CartProducts
             for (const prod of products) {
-                const dbProduct = productMap.get(prod.productName);
+                const dbProduct = productMap.get(prod.productName)
                 if (!dbProduct) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: `Product ${prod.productName} not found.`
-                            })
+                                error: `Product ${prod.productName} not found.`,
+                            }),
                         },
-                        HttpStatus.BAD_REQUEST
-                    );
+                        HttpStatus.BAD_REQUEST,
+                    )
                 }
                 const priceList = dbProduct.PriceLists.find(
-                    (pl: any) => pl.id === prod.priceListId
-                );
+                    (pl: any) => pl.id === prod.priceListId,
+                )
                 if (!priceList) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: `PriceList for ${prod.productName} not found.`
-                            })
+                                error: `PriceList for ${prod.productName} not found.`,
+                            }),
                         },
-                        HttpStatus.BAD_REQUEST
-                    );
+                        HttpStatus.BAD_REQUEST,
+                    )
                 }
                 const existing = existingCartProducts.find(
                     (cp: any) =>
                         cp.productId === dbProduct.id &&
-                        cp.priceListId === prod.priceListId
-                );
+                        cp.priceListId === prod.priceListId,
+                )
                 if (existing) {
                     if (prod.quantity !== existing.toJSON().quantity) {
-                        await existing.update({ quantity: prod.quantity });
-                        isProductsModified = true;
+                        await existing.update({ quantity: prod.quantity })
+                        isProductsModified = true
                     }
                 } else {
                     await CartProduct.create({
                         cartId: cart.id,
                         productId: dbProduct.id,
                         priceListId: prod.priceListId,
-                        quantity: prod.quantity
-                    });
-                    isProductsModified = true;
+                        quantity: prod.quantity,
+                    })
+                    isProductsModified = true
                 }
             }
             // Delete CartProducts not in request
             for (const existing of existingCartProducts) {
                 if (
                     productIdsInRequest.indexOf(
-                        existing.toJSON().Product?.name
+                        existing.toJSON().Product?.name,
                     ) === -1
                 ) {
-                    await existing.destroy();
-                    isProductsModified = true;
+                    await existing.destroy()
+                    isProductsModified = true
                 }
             }
 
             // Step 4: Create or update Order
-            let order;
-            let isNewOrder = false;
-            let isOrderShipped = false;
-            let isOrderDelivered = false;
+            let order
+            let isNewOrder = false
+            let isOrderShipped = false
+            let isOrderDelivered = false
             if (orderId) {
-                order = await Order.findByPk(orderId);
+                order = await Order.findByPk(orderId)
                 if (!order) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Order not found."
-                            })
+                                error: "Order not found.",
+                            }),
                         },
-                        HttpStatus.BAD_REQUEST
-                    );
+                        HttpStatus.BAD_REQUEST,
+                    )
                 }
                 isOrderShipped =
                     order.toJSON().status !== orderStatus &&
-                    orderStatus === "Shipped";
+                    orderStatus === "Shipped"
                 isOrderDelivered =
                     order.toJSON().status !== orderStatus &&
-                    orderStatus === "Delivered";
+                    orderStatus === "Delivered"
                 const isOrderCancelled =
                     order.toJSON().status !== orderStatus &&
-                    orderStatus === "Cancelled";
+                    orderStatus === "Cancelled"
                 await order.update({
                     userId: user.id,
                     userAddressId: address.toJSON().id,
@@ -1663,33 +1663,33 @@ export class AdminController {
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                     ...(awb !== undefined && { awb }),
-                    ...(courier !== undefined && { courier })
-                });
-                isNewOrder = false;
+                    ...(courier !== undefined && { courier }),
+                })
+                isNewOrder = false
                 // Restore inventory when order is cancelled
                 if (isOrderCancelled) {
-                    await this.increaseInventoryForProducts(products);
+                    await this.increaseInventoryForProducts(products)
                 }
 
                 // Handle couponId: save or update in OrderCoupon table
                 const existingOrderCoupon = await OrderCoupon.findOne({
-                    where: { orderId: order.toJSON().id }
-                });
+                    where: { orderId: order.toJSON().id },
+                })
                 if (couponId) {
                     if (existingOrderCoupon) {
                         await existingOrderCoupon.update({
-                            couponCodeId: couponId
-                        });
+                            couponCodeId: couponId,
+                        })
                     } else {
                         await OrderCoupon.create({
                             orderId: order.toJSON().id,
-                            couponCodeId: couponId
-                        });
+                            couponCodeId: couponId,
+                        })
                     }
                 } else {
                     await existingOrderCoupon?.update({
-                        couponCodeId: null
-                    });
+                        couponCodeId: null,
+                    })
                 }
             } else {
                 order = await Order.create({
@@ -1704,29 +1704,29 @@ export class AdminController {
                     orderedDate: new Date(orderDate),
                     expectedDeliveryDate: new Date(expectedDeliveryDate),
                     awb: awb || null,
-                    courier: courier || null
-                });
+                    courier: courier || null,
+                })
                 order = await Order.findOne({
                     where: {
                         cartId: cart.toJSON().id,
-                        userId: user.toJSON().id
-                    }
-                });
-                isNewOrder = true;
+                        userId: user.toJSON().id,
+                    },
+                })
+                isNewOrder = true
                 // Handle couponId: save or update in OrderCoupon table
                 if (couponId) {
                     const existingOrderCoupon = await OrderCoupon.findOne({
-                        where: { orderId: order.toJSON().id }
-                    });
+                        where: { orderId: order.toJSON().id },
+                    })
                     if (existingOrderCoupon) {
                         await existingOrderCoupon.update({
-                            couponCodeId: couponId
-                        });
+                            couponCodeId: couponId,
+                        })
                     } else {
                         await OrderCoupon.create({
                             orderId: order.toJSON().id,
-                            couponCodeId: couponId
-                        });
+                            couponCodeId: couponId,
+                        })
                     }
                 }
                 // Reduce inventory for new orders with status 'Payment Processed' or 'Ordered'
@@ -1734,7 +1734,7 @@ export class AdminController {
                     orderStatus === "Payment Processed" ||
                     orderStatus === "Ordered"
                 ) {
-                    await this.reduceInventoryForProducts(products);
+                    await this.reduceInventoryForProducts(products)
                 }
             }
             if (isProductsModified === true || isNewOrder === true) {
@@ -1744,9 +1744,9 @@ export class AdminController {
                         isNewOrder === true
                             ? "Thank you for placing your order. Please find the invoice below"
                             : isProductsModified === true
-                                ? "We have updated your order. Please find the updated invoice below"
-                                : ""
-                    );
+                              ? "We have updated your order. Please find the updated invoice below"
+                              : "",
+                    )
                 // Send order invoice email to user
                 const userMailResult = await this.appService.sendMail({
                     to: user.toJSON().email,
@@ -1754,13 +1754,13 @@ export class AdminController {
                         isNewOrder === true
                             ? "Your Order Invoice - Renu's Home Foods"
                             : isProductsModified === true
-                                ? "Your Updated Order Invoice - Renu's Home Foods"
-                                : "",
+                              ? "Your Updated Order Invoice - Renu's Home Foods"
+                              : "",
                     template: "order-invoice",
-                    data: orderInvoiceData
-                });
+                    data: orderInvoiceData,
+                })
                 if (userMailResult.success && userMailResult.messageId) {
-                    await order.update({ userMsgId: userMailResult.messageId });
+                    await order.update({ userMsgId: userMailResult.messageId })
                 }
 
                 // Send order invoice email to admin and capture messageId
@@ -1769,15 +1769,15 @@ export class AdminController {
                     subject: isNewOrder
                         ? `New Order Placed - ${user.toJSON().name} (${user.toJSON().phone})`
                         : isProductsModified
-                            ? `Order Updated - ${user.toJSON().name} (${user.toJSON().phone})`
-                            : "",
+                          ? `Order Updated - ${user.toJSON().name} (${user.toJSON().phone})`
+                          : "",
                     template: "order-invoice",
-                    data: orderInvoiceData
-                });
+                    data: orderInvoiceData,
+                })
                 if (adminMailResult.success && adminMailResult.messageId) {
                     await order.update({
-                        adminMsgId: adminMailResult.messageId
-                    });
+                        adminMsgId: adminMailResult.messageId,
+                    })
                 }
             }
             if (isOrderShipped) {
@@ -1786,30 +1786,30 @@ export class AdminController {
                         order.toJSON().id,
                         `We have shipped order, you should recieve your order as per our shipping policy with estimated delivery by <strong>${this.appService.formatDate(
                             new Date(order.toJSON().expectedDeliveryDate),
-                            false
-                        )}</strong>. Please find the invoice below`
-                    );
+                            false,
+                        )}</strong>. Please find the invoice below`,
+                    )
                 // Send order invoice email to user
                 await this.appService.sendMail({
                     to: user.toJSON().email,
                     subject: "Order Shipped - Renu's Home Foods",
                     template: "order-invoice",
-                    data: orderInvoiceData
-                });
+                    data: orderInvoiceData,
+                })
             }
             if (isOrderDelivered) {
                 const orderInvoiceData =
                     await this.appService.getOrderInvoiceData(
                         order.toJSON().id,
-                        "Your Order has been delivered. Hope you enjoy our delicacies as much as we loved making it for you. Please find the invoice below"
-                    );
+                        "Your Order has been delivered. Hope you enjoy our delicacies as much as we loved making it for you. Please find the invoice below",
+                    )
                 // Send order invoice email to user
                 await this.appService.sendMail({
                     to: user.toJSON().email,
                     subject: "Order Delivered - Renu's Home Foods",
                     template: "order-invoice",
-                    data: orderInvoiceData
-                });
+                    data: orderInvoiceData,
+                })
             }
             const encryptedResponse = {
                 response: encryptPayload({
@@ -1817,49 +1817,49 @@ export class AdminController {
                     cartId: cart.id,
                     userAddressId: address.toJSON().id,
                     userId: user.toJSON().id,
-                    message: "Order created/updated successfully."
-                })
-            };
-            return encryptedResponse;
+                    message: "Order created/updated successfully.",
+                }),
+            }
+            return encryptedResponse
         } catch (error) {
             const cleanMessage = `Error in createOrUpdateOrder: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to create or update order. ${errorMessage}`
-                    })
+                        error: `Failed to create or update order. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("save-coupon")
     async createCoupon(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request
-            const decryptedBody = decryptPayload(body.request);
+            const decryptedBody = decryptPayload(body.request)
             const {
                 couponId,
                 code,
@@ -1871,8 +1871,8 @@ export class AdminController {
                 isForAllUsers,
                 discounts,
                 productIds,
-                userIds
-            } = decryptedBody;
+                userIds,
+            } = decryptedBody
 
             // Validate required fields
             if (
@@ -1886,28 +1886,28 @@ export class AdminController {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Missing required fields: code, startDate, endDate, discounts, productIds, userIds."
-                        })
+                            error: "Missing required fields: code, startDate, endDate, discounts, productIds, userIds.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
-            let couponCode;
-            let isUpdate = false;
+            let couponCode
+            let isUpdate = false
 
             if (couponId) {
                 // Update existing coupon
-                couponCode = await CouponCode.findByPk(couponId);
+                couponCode = await CouponCode.findByPk(couponId)
                 if (!couponCode) {
                     throw new HttpException(
                         {
                             error: encryptPayload({
-                                error: "Coupon not found."
-                            })
+                                error: "Coupon not found.",
+                            }),
                         },
-                        HttpStatus.NOT_FOUND
-                    );
+                        HttpStatus.NOT_FOUND,
+                    )
                 }
                 await couponCode.update({
                     code,
@@ -1918,9 +1918,9 @@ export class AdminController {
                     isForNewUsers:
                         isForNewUsers !== undefined ? isForNewUsers : false,
                     isForAllUsers:
-                        isForAllUsers !== undefined ? isForAllUsers : false
-                });
-                isUpdate = true;
+                        isForAllUsers !== undefined ? isForAllUsers : false,
+                })
+                isUpdate = true
             } else {
                 // Create new CouponCode
                 couponCode = await CouponCode.create({
@@ -1932,55 +1932,55 @@ export class AdminController {
                     isForNewUsers:
                         isForNewUsers !== undefined ? isForNewUsers : false,
                     isForAllUsers:
-                        isForAllUsers !== undefined ? isForAllUsers : false
-                });
+                        isForAllUsers !== undefined ? isForAllUsers : false,
+                })
             }
 
             // Compute productIdsToCreate
-            let productIdsToCreate = productIds;
+            let productIdsToCreate = productIds
             if (productIds.includes("All")) {
                 const allProducts = await Product.findAll({
-                    attributes: ["id"]
-                });
-                productIdsToCreate = allProducts.map((p: any) => p.id);
+                    attributes: ["id"],
+                })
+                productIdsToCreate = allProducts.map((p: any) => p.id)
             }
 
             // Compute userIdsToCreate
-            let userIdsToCreate = userIds;
+            let userIdsToCreate = userIds
             if (userIds.includes("All")) {
                 const allUsers = await User.findAll({
-                    attributes: ["id"]
-                });
-                userIdsToCreate = allUsers.map((u: any) => u.toJSON().id);
+                    attributes: ["id"],
+                })
+                userIdsToCreate = allUsers.map((u: any) => u.toJSON().id)
             }
             // Append all admin users without duplicating IDs
             const adminUsers = await UserRole.findAll({
                 where: { roleId: 1 },
-                attributes: ["userId"]
-            });
-            const adminUserIds = adminUsers.map((ur: any) => ur.toJSON().userId);
+                attributes: ["userId"],
+            })
+            const adminUserIds = adminUsers.map((ur: any) => ur.toJSON().userId)
             userIdsToCreate = [
-                ...new Set([...userIdsToCreate, ...adminUserIds])
-            ];
+                ...new Set([...userIdsToCreate, ...adminUserIds]),
+            ]
 
             if (isUpdate) {
                 // Handle discounts selectively
                 const existingDiscounts = await CouponDiscounts.findAll({
-                    where: { couponCodeId: couponId }
-                });
-                const discountNamesInRequest = discounts.map((d: any) => d.name);
+                    where: { couponCodeId: couponId },
+                })
+                const discountNamesInRequest = discounts.map((d: any) => d.name)
                 for (const discount of discounts) {
                     const existing = existingDiscounts.find(
-                        (ed: any) => ed.toJSON().name === discount.name
-                    );
+                        (ed: any) => ed.toJSON().name === discount.name,
+                    )
                     if (existing) {
                         await existing.update({
                             discount: discount.discount,
                             flatrate:
                                 discount.flatrate !== undefined
                                     ? discount.flatrate
-                                    : false
-                        });
+                                    : false,
+                        })
                     } else {
                         await CouponDiscounts.create({
                             name: discount.name,
@@ -1989,8 +1989,8 @@ export class AdminController {
                                 discount.flatrate !== undefined
                                     ? discount.flatrate
                                     : false,
-                            couponCodeId: couponCode.id
-                        });
+                            couponCodeId: couponCode.id,
+                        })
                     }
                 }
                 // Delete discounts not in request
@@ -1998,57 +1998,57 @@ export class AdminController {
                     if (
                         !discountNamesInRequest.includes(existing.toJSON().name)
                     ) {
-                        await existing.destroy();
+                        await existing.destroy()
                     }
                 }
 
                 // Handle products selectively
                 const existingProducts = await CouponProducts.findAll({
                     where: { couponCodeId: couponId },
-                    attributes: ["productId", "id"]
-                });
+                    attributes: ["productId", "id"],
+                })
                 const existingProductIds = existingProducts.map(
-                    (ep: any) => ep.toJSON().productId
-                );
+                    (ep: any) => ep.toJSON().productId,
+                )
                 for (const productId of productIdsToCreate) {
                     if (!existingProductIds.includes(productId)) {
                         await CouponProducts.create({
                             couponCodeId: couponCode.id,
-                            productId
-                        });
+                            productId,
+                        })
                     }
                 }
                 // Delete products not in request
                 for (const existing of existingProducts) {
                     if (
                         !productIdsToCreate.includes(
-                            existing.toJSON().productId
+                            existing.toJSON().productId,
                         )
                     ) {
-                        await existing.destroy();
+                        await existing.destroy()
                     }
                 }
 
                 // Handle users selectively
                 const existingUsers = await CouponUsers.findAll({
                     where: { couponCodeId: couponId },
-                    attributes: ["userId", "id"]
-                });
+                    attributes: ["userId", "id"],
+                })
                 const existingUserIds = existingUsers.map(
-                    (eu: any) => eu.toJSON().userId
-                );
+                    (eu: any) => eu.toJSON().userId,
+                )
                 for (const userId of userIdsToCreate) {
                     if (!existingUserIds.includes(userId)) {
                         await CouponUsers.create({
                             couponCodeId: couponCode.id,
-                            userId
-                        });
+                            userId,
+                        })
                     }
                 }
                 // Delete users not in request
                 for (const existing of existingUsers) {
                     if (!userIdsToCreate.includes(existing.toJSON().userId)) {
-                        await existing.destroy();
+                        await existing.destroy()
                     }
                 }
             } else {
@@ -2061,20 +2061,20 @@ export class AdminController {
                             discount.flatrate !== undefined
                                 ? discount.flatrate
                                 : false,
-                        couponCodeId: couponCode.id
-                    });
+                        couponCodeId: couponCode.id,
+                    })
                 }
                 for (const productId of productIdsToCreate) {
                     await CouponProducts.create({
                         couponCodeId: couponCode.id,
-                        productId
-                    });
+                        productId,
+                    })
                 }
                 for (const userId of userIdsToCreate) {
                     await CouponUsers.create({
                         couponCodeId: couponCode.id,
-                        userId
-                    });
+                        userId,
+                    })
                 }
             }
 
@@ -2083,91 +2083,91 @@ export class AdminController {
                     couponId: couponCode.id,
                     message: isUpdate
                         ? "Coupon updated successfully."
-                        : "Coupon created successfully."
-                })
-            };
+                        : "Coupon created successfully.",
+                }),
+            }
         } catch (error) {
             const cleanMessage = `Error in createCoupon: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to create coupon. ${errorMessage}`
-                    })
+                        error: `Failed to create coupon. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
     @Post("save-user")
     async saveUser(
         @Body() body: { request: string },
-        @Headers() headers: Record<string, string>
+        @Headers() headers: Record<string, string>,
     ) {
-        const transaction = await sequelize.transaction();
+        const transaction = await sequelize.transaction()
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request
-            const decryptedBody = decryptPayload(body.request);
-            const { user, addresses } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { user, addresses } = decryptedBody
 
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User data is required."
-                        })
+                            error: "User data is required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             if (!Array.isArray(addresses)) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Addresses array is required."
-                        })
+                            error: "Addresses array is required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
-            let userInstance;
-            const isNewUser = !user.id;
+            let userInstance
+            const isNewUser = !user.id
 
             // Check if user exists by id or phone or email (unique keys)
             if (user.id) {
-                userInstance = await User.findByPk(user.id, { transaction });
+                userInstance = await User.findByPk(user.id, { transaction })
             }
             if (!userInstance && user.phone) {
                 userInstance = await User.findOne({
                     where: { phone: user.phone },
-                    transaction
-                });
+                    transaction,
+                })
             }
             if (!userInstance && user.email) {
                 userInstance = await User.findOne({
                     where: { email: user.email },
-                    transaction
-                });
+                    transaction,
+                })
             }
 
             if (userInstance) {
@@ -2177,7 +2177,7 @@ export class AdminController {
                     user.hasOwnProperty("password") &&
                     Boolean(user?.password) === true
                         ? hashPassword(user.password)
-                        : userInstance.toJSON().password;
+                        : userInstance.toJSON().password
                 await userInstance.update(
                     {
                         name: user.name,
@@ -2185,61 +2185,61 @@ export class AdminController {
                         phone: user.phone,
                         username: user.username || user.phone,
                         password: passwordToSave,
-                        otp: null
+                        otp: null,
                     },
-                    { transaction }
-                );
+                    { transaction },
+                )
             } else {
                 // Create new user
                 const passwordToSave =
                     user.hasOwnProperty("password") &&
                     user.password !== undefined
                         ? hashPassword(user.password)
-                        : "";
+                        : ""
                 userInstance = await User.create(
                     {
                         name: user.name,
                         email: user.email,
                         phone: user.phone,
                         username: user.username || user.phone,
-                        password: passwordToSave
+                        password: passwordToSave,
                     },
-                    { transaction }
-                );
+                    { transaction },
+                )
             }
 
-            const userId = userInstance.toJSON().id;
+            const userId = userInstance.toJSON().id
 
             // Handle roles - sync roles sent in user.roles (array of {id,name})
             if (Array.isArray(user.roles)) {
                 // Fetch current user roles
                 const currentUserRoles = await UserRole.findAll({
                     where: { userId },
-                    transaction
-                });
+                    transaction,
+                })
                 const currentRoleIds = currentUserRoles.map(
-                    (ur) => ur.toJSON().roleId
-                );
-                const requestedRoleIds = user.roles;
+                    (ur) => ur.toJSON().roleId,
+                )
+                const requestedRoleIds = user.roles
 
                 // Roles to add
                 const rolesToAdd = requestedRoleIds.filter(
-                    (id) => !currentRoleIds.includes(id)
-                );
+                    (id) => !currentRoleIds.includes(id),
+                )
                 // Roles to remove
                 const rolesToRemove = currentRoleIds.filter(
-                    (id) => !requestedRoleIds.includes(id)
-                );
+                    (id) => !requestedRoleIds.includes(id),
+                )
 
                 // Add missing roles
                 for (const roleId of rolesToAdd) {
                     await UserRole.create(
                         {
                             userId,
-                            roleId
+                            roleId,
                         },
-                        { transaction }
-                    );
+                        { transaction },
+                    )
                 }
 
                 // Remove roles not requested anymore
@@ -2247,24 +2247,24 @@ export class AdminController {
                     await UserRole.destroy({
                         where: {
                             userId,
-                            roleId: rolesToRemove
+                            roleId: rolesToRemove,
                         },
-                        transaction
-                    });
+                        transaction,
+                    })
                 }
             }
 
             // Logic to delete UserAddresses not in the incoming addresses array
             const existingAddresses = await UserAddress.findAll({
                 where: { userId },
-                transaction
-            });
+                transaction,
+            })
             const incomingAddressIds = addresses
                 .filter((addr: any) => addr.id)
-                .map((addr: any) => addr.id);
+                .map((addr: any) => addr.id)
             for (const existingAddress of existingAddresses) {
                 if (!incomingAddressIds.includes(existingAddress.toJSON().id)) {
-                    await existingAddress.destroy({ transaction });
+                    await existingAddress.destroy({ transaction })
                 }
             }
 
@@ -2272,13 +2272,13 @@ export class AdminController {
             const passwordIsSet =
                 user.hasOwnProperty("password") &&
                 typeof user.password === "string" &&
-                user.password !== "";
+                user.password !== ""
             const encryptedIdentifier = encryptPayload({
-                identifier: userInstance.toJSON().username
-            });
+                identifier: userInstance.toJSON().username,
+            })
             if (isNewUser && !passwordIsSet) {
-                const otp = this.appService.generateRandomNumber(4);
-                await userInstance.update({ otp }, { transaction });
+                const otp = this.appService.generateRandomNumber(4)
+                await userInstance.update({ otp }, { transaction })
                 await this.appService.sendMail({
                     to: userInstance.toJSON().email,
                     subject:
@@ -2288,17 +2288,17 @@ export class AdminController {
                         logo: "https://renushomefoods.com/static/logo.png",
                         userFullName: userInstance.toJSON().name,
                         message: `Your OTP to reset your password for your account with <b>${user.toJSON().email}</b> and phone number <b>${user.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
-                        year: new Date().getFullYear().toString()
-                    }
-                });
+                        year: new Date().getFullYear().toString(),
+                    },
+                })
             }
             // Handle resetPassword boolean if true, generate OTP and send email
             if (
                 user.resetPassword === true &&
                 Boolean(user?.password) === false
             ) {
-                const otp = this.appService.generateRandomNumber(4);
-                await userInstance.update({ otp }, { transaction });
+                const otp = this.appService.generateRandomNumber(4)
+                await userInstance.update({ otp }, { transaction })
                 await this.appService.sendMail({
                     to: userInstance.toJSON().email,
                     subject:
@@ -2308,9 +2308,9 @@ export class AdminController {
                         logo: "https://renushomefoods.com/static/logo.png",
                         userFullName: userInstance.toJSON().name,
                         message: `Your OTP to reset your password for your account with <b>${userInstance.toJSON().email}</b> and phone number <b>${userInstance.toJSON().phone}</b> is <b>${otp}</b>. <br/><br/> You can click <a href='${process.env.WEB_HOST}/reset-password/${encryptedIdentifier}'>here</a> to reset the password.<br/><br/> This OTP is valid for 10 minutes. Please <a href='${process.env.WEB_HOST}/contact'>contact us</a> if you havent requested this password reset.`,
-                        year: new Date().getFullYear().toString()
-                    }
-                });
+                        year: new Date().getFullYear().toString(),
+                    },
+                })
             }
 
             // Save or update addresses
@@ -2319,8 +2319,8 @@ export class AdminController {
                     // Update existing address if belongs to user
                     const existingAddress = await UserAddress.findOne({
                         where: { id: addr.id, userId },
-                        transaction
-                    });
+                        transaction,
+                    })
                     if (existingAddress) {
                         await existingAddress.update(
                             {
@@ -2334,10 +2334,10 @@ export class AdminController {
                                 isDefault:
                                     addr.isDefault !== undefined
                                         ? addr.isDefault
-                                        : existingAddress.isDefault
+                                        : existingAddress.isDefault,
                             },
-                            { transaction }
-                        );
+                            { transaction },
+                        )
                     } else {
                         // Address id given but not found or mismatched userId, create new address anyway
                         await UserAddress.create(
@@ -2350,10 +2350,10 @@ export class AdminController {
                                 country: addr.country,
                                 pincode: addr.pincode,
                                 phone: addr.phone,
-                                isDefault: addr.isDefault || false
+                                isDefault: addr.isDefault || false,
                             },
-                            { transaction }
-                        );
+                            { transaction },
+                        )
                     }
                 } else {
                     // Create new address
@@ -2367,47 +2367,47 @@ export class AdminController {
                             country: addr.country,
                             pincode: addr.pincode,
                             phone: addr.phone,
-                            isDefault: addr.isDefault || false
+                            isDefault: addr.isDefault || false,
                         },
-                        { transaction }
-                    );
+                        { transaction },
+                    )
                 }
             }
 
-            await transaction.commit();
+            await transaction.commit()
 
             return {
                 response: encryptPayload({
                     userId,
                     message:
-                        "User and addresses saved or updated successfully."
-                })
-            };
+                        "User and addresses saved or updated successfully.",
+                }),
+            }
         } catch (error) {
-            await transaction.rollback();
+            await transaction.rollback()
             const cleanMessage = `Error in saveUser: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack; // keep original stack
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack // keep original stack
 
-            logger.error(err); // Winston now logs message + stack
+            logger.error(err) // Winston now logs message + stack
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to save or update user. ${errorMessage}`
-                    })
+                        error: `Failed to save or update user. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -2415,88 +2415,88 @@ export class AdminController {
     async sendAdCampaignEmails(@Body() body: { request: string }) {
         try {
             // Decrypt body to get adCampaign id and token
-            const decryptedBody = decryptPayload(body.request);
-            const { id, token } = decryptedBody;
+            const decryptedBody = decryptPayload(body.request)
+            const { id, token } = decryptedBody
 
             if (!id || !token) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "AdCampaign id and token are required."
-                        })
+                            error: "AdCampaign id and token are required.",
+                        }),
                     },
-                    HttpStatus.BAD_REQUEST
-                );
+                    HttpStatus.BAD_REQUEST,
+                )
             }
 
             // Authenticate admin using token from decrypted body
             try {
-                jwt.verify(token, JWT_SECRET);
+                jwt.verify(token, JWT_SECRET)
             } catch (err) {
-                err.message = "Invalid or expired token.";
+                err.message = "Invalid or expired token."
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Invalid or expired token."
-                        })
+                            error: "Invalid or expired token.",
+                        }),
                     },
-                    HttpStatus.UNAUTHORIZED
-                );
+                    HttpStatus.UNAUTHORIZED,
+                )
             }
 
             // Check if token exists in DB and is not expired
             const session = await UserSession.findOne({
                 where: {
                     token,
-                    isExpired: false
-                }
-            });
+                    isExpired: false,
+                },
+            })
 
             if (!session) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Session not found or expired."
-                        })
+                            error: "Session not found or expired.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
 
             // Fetch user and verify admin role
-            const {userId} = session.toJSON();
+            const { userId } = session.toJSON()
             const user = await User.findByPk(userId, {
                 include: [
                     {
                         model: Role,
                         as: "roles",
-                        through: { attributes: [] }
-                    }
-                ]
-            });
+                        through: { attributes: [] },
+                    },
+                ],
+            })
 
             if (!user) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "User not found."
-                        })
+                            error: "User not found.",
+                        }),
                     },
-                    HttpStatus.NOT_FOUND
-                );
+                    HttpStatus.NOT_FOUND,
+                )
             }
 
-            const roles = user.toJSON().roles || [];
-            const isAdmin = roles.some((role: any) => role.id === 1);
+            const roles = user.toJSON().roles || []
+            const isAdmin = roles.some((role: any) => role.id === 1)
             if (!isAdmin) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "Access denied. Admin role required."
-                        })
+                            error: "Access denied. Admin role required.",
+                        }),
                     },
-                    HttpStatus.FORBIDDEN
-                );
+                    HttpStatus.FORBIDDEN,
+                )
             }
 
             // Fetch AdCampaign by id including users
@@ -2506,74 +2506,76 @@ export class AdminController {
                         model: User,
                         as: "users",
                         through: { attributes: [] },
-                        attributes: ["id", "email", "name"]
-                    }
-                ]
-            });
+                        attributes: ["id", "email", "name"],
+                    },
+                ],
+            })
 
             if (!adCampaign) {
                 throw new HttpException(
                     {
                         error: encryptPayload({
-                            error: "AdCampaign not found."
-                        })
+                            error: "AdCampaign not found.",
+                        }),
                     },
-                    HttpStatus.NOT_FOUND
-                );
+                    HttpStatus.NOT_FOUND,
+                )
             }
 
             const { subject, message, imagePath, imageURL } =
-                adCampaign.toJSON();
+                adCampaign.toJSON()
             // Send emails to all users in the campaign
-            const users = adCampaign.toJSON().users || [];
+            const users = adCampaign.toJSON().users || []
 
             // For each user, send email (async)
-            const emailPromises = users.map((user: any) => this.appService.sendMail({
-                to: user.email,
-                subject: subject || "Ad Campaign",
-                template: "ad-campaign",
-                data: {
-                    logo: "https://renushomefoods.com/static/logo.png",
-                    userName: user.name,
-                    message,
-                    campaignImage: `${process.env.WEB_HOST}/static${imagePath}`,
-                    imageURL
-                }
-            }));
+            const emailPromises = users.map((user: any) =>
+                this.appService.sendMail({
+                    to: user.email,
+                    subject: subject || "Ad Campaign",
+                    template: "ad-campaign",
+                    data: {
+                        logo: "https://renushomefoods.com/static/logo.png",
+                        userName: user.name,
+                        message,
+                        campaignImage: `${process.env.WEB_HOST}/static${imagePath}`,
+                        imageURL,
+                    },
+                }),
+            )
 
-            await Promise.all(emailPromises);
+            await Promise.all(emailPromises)
 
             return {
                 response: encryptPayload({
-                    message: `Emails sent successfully to ${users.length} users.`
-                })
-            };
+                    message: `Emails sent successfully to ${users.length} users.`,
+                }),
+            }
         } catch (error) {
             const cleanMessage = `Error in sendAdCampaignEmails: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
                         error: `Failed to send ad campaign emails. ${
                             errorMessage
-                        }`
-                    })
+                        }`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -2581,48 +2583,48 @@ export class AdminController {
     async downloadDashboard(
         @Body() body: { request: string },
         @Headers() headers: Record<string, string>,
-        @Res() res: Response
+        @Res() res: Response,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request to extract filters
-            const filters = decryptPayload(body.request);
+            const filters = decryptPayload(body.request)
 
             // Determine format from query param or default to pdf
-            const format = (filters.format as "pdf" | "png") || "pdf";
+            const format = (filters.format as "pdf" | "png") || "pdf"
 
             // Generate dashboard file
             const buffer = await this.pdfService.generateDashboardPdf(
                 filters,
-                format
-            );
+                format,
+            )
 
             // Set response headers
-            const fileName = `Admin Dashboard-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.${format}`;
+            const fileName = `Admin Dashboard-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.${format}`
             res.setHeader(
                 "Content-Type",
-                format === "pdf" ? "application/pdf" : "image/png"
-            );
+                format === "pdf" ? "application/pdf" : "image/png",
+            )
             res.setHeader(
                 "Content-Disposition",
-                `attachment; filename="${fileName}"`
-            );
+                `attachment; filename="${fileName}"`,
+            )
 
             // Send buffer
-            res.send(buffer);
+            res.send(buffer)
         } catch (error) {
-            logger.error(`Dashboard export failed: ${error.message}`);
+            logger.error(`Dashboard export failed: ${error.message}`)
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to generate dashboard export: ${error.message}`
-                    })
+                        error: `Failed to generate dashboard export: ${error.message}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 
@@ -2630,15 +2632,15 @@ export class AdminController {
     async exportExcelData(
         @Body() body: { request: string },
         @Headers() headers: Record<string, string>,
-        @Res() res: Response
+        @Res() res: Response,
     ) {
         try {
             // Authenticate admin
-            const authHeader = headers.authorization || "";
-            await this.authenticateAdmin(authHeader);
+            const authHeader = headers.authorization || ""
+            await this.authenticateAdmin(authHeader)
 
             // Decrypt request to extract filters
-            const filters = decryptPayload(body.request);
+            const filters = decryptPayload(body.request)
             const {
                 fromDate,
                 toDate,
@@ -2646,23 +2648,23 @@ export class AdminController {
                 category,
                 product,
                 name,
-                phone
-            } = filters;
+                phone,
+            } = filters
 
             // Adjust dates to be timezone agnostic and filter by date only
-            let adjustedFromDate = fromDate;
-            let adjustedToDate = toDate;
+            let adjustedFromDate = fromDate
+            let adjustedToDate = toDate
             if (fromDate) {
                 adjustedFromDate = new Date(`${fromDate}T00:00:00.000Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
             if (toDate) {
                 adjustedToDate = new Date(`${toDate}T23:59:59.999Z`)
                     .toISOString()
                     .slice(0, 19)
-                    .replace("T", " ");
+                    .replace("T", " ")
             }
 
             // Call get-orders API internally
@@ -2676,15 +2678,15 @@ export class AdminController {
                         category: category || null,
                         product: product || null,
                         name: name || null,
-                        phone: phone || null
-                    }
-                }
-            );
+                        phone: phone || null,
+                    },
+                },
+            )
 
             // Process orders data similar to fetchOrders method
             const ordersMap: { [key: number]: any } = {}
             ;(ordersResults as any[]).forEach((row: any) => {
-                const {orderId} = row;
+                const { orderId } = row
                 if (!ordersMap[orderId]) {
                     ordersMap[orderId] = {
                         orderId: row.orderId,
@@ -2711,8 +2713,8 @@ export class AdminController {
                         products: [],
                         shippingDiscount: row.shippingDiscount,
                         couponCode: row.couponCode,
-                        productDiscount: row.productDiscount
-                    };
+                        productDiscount: row.productDiscount,
+                    }
                 }
                 ordersMap[orderId].products.push({
                     quantity: row.quantity,
@@ -2721,37 +2723,37 @@ export class AdminController {
                     categoryName: row.categoryName,
                     productTotal: row.productTotal,
                     priceListId: row.priceListId,
-                    productDiscount: row.productDiscount
-                });
-            });
-            const orders = Object.values(ordersMap);
+                    productDiscount: row.productDiscount,
+                })
+            })
+            const orders = Object.values(ordersMap)
 
             // Calculate orderTotal for each order
             orders.forEach((order: any) => {
                 const orderTotal = order.products.reduce(
                     (sum: number, product: any) =>
                         sum + (product?.productTotal || 0),
-                    0
-                );
+                    0,
+                )
                 const productDiscount = order.products.reduce(
                     (sum: number, product: any) =>
                         sum + (product?.productDiscount || 0),
-                    0
-                );
-                order.orderTotal = orderTotal;
-                order.productDiscount = productDiscount;
-            });
+                    0,
+                )
+                order.orderTotal = orderTotal
+                order.productDiscount = productDiscount
+            })
 
             // Call chart-data API internally for each chart type
             const chartTypes = [
                 "Total Sales by Category",
                 "Total Sales by Product",
                 "Total Sales by Order Status",
-                "Products with Quantities by Order Status"
-            ];
-            const chartTypeKeyMap = {};
+                "Products with Quantities by Order Status",
+            ]
+            const chartTypeKeyMap = {}
 
-            const chartData: any = {};
+            const chartData: any = {}
 
             // Call stored procedure for each chart type
             for (const chartType of chartTypes) {
@@ -2766,12 +2768,12 @@ export class AdminController {
                             product: product || null,
                             name: name || null,
                             phone: phone || null,
-                            chartType
-                        }
-                    }
-                );
+                            chartType,
+                        },
+                    },
+                )
 
-                let processedResults: any = results;
+                let processedResults: any = results
 
                 // Special processing for 'Products with Quantities by Order Status'
                 if (chartType === "Products with Quantities by Order Status") {
@@ -2786,46 +2788,46 @@ export class AdminController {
                             row.product ||
                             row.Product ||
                             row.productName ||
-                            row.ProductName;
+                            row.ProductName
 
                         if (!productMap[product]) {
                             productMap[product] = {
                                 pendingQuantity: 0,
-                                fulfilledQuantity: 0
-                            };
+                                fulfilledQuantity: 0,
+                            }
                         }
 
                         productMap[product].pendingQuantity +=
-                            Number(row.pendingQuantity) ?? 0;
+                            Number(row.pendingQuantity) ?? 0
                         productMap[product].fulfilledQuantity +=
-                            Number(row.fulfilledQuantity) ?? 0;
-                    });
+                            Number(row.fulfilledQuantity) ?? 0
+                    })
 
                     processedResults = Object.entries(productMap).map(
                         ([product, quantities]) => ({
                             product,
                             pendingQuantity: quantities.pendingQuantity,
-                            fulfilledQuantity: quantities.fulfilledQuantity
-                        })
-                    );
+                            fulfilledQuantity: quantities.fulfilledQuantity,
+                        }),
+                    )
                 }
 
                 // Map chart type to key in response
                 const key = chartType
                     .toLowerCase()
                     .replace(/\s+/g, "")
-                    .replace(/[^a-zA-Z0-9]/g, "");
-                chartData[key] = processedResults;
-                chartTypeKeyMap[key] = chartType;
+                    .replace(/[^a-zA-Z0-9]/g, "")
+                chartData[key] = processedResults
+                chartTypeKeyMap[key] = chartType
             }
 
             // Create Excel workbook
-            const workbook = new ExcelJS.Workbook();
-            workbook.creator = "Renu Home Foods Admin";
-            workbook.created = new Date();
+            const workbook = new ExcelJS.Workbook()
+            workbook.creator = "Renu Home Foods Admin"
+            workbook.created = new Date()
 
             // Create Orders sheet
-            const ordersSheet = workbook.addWorksheet("Orders");
+            const ordersSheet = workbook.addWorksheet("Orders")
 
             // Define orders sheet columns
             ordersSheet.columns = [
@@ -2838,7 +2840,7 @@ export class AdminController {
                 {
                     header: "Delivery Address",
                     key: "deliveryAddress",
-                    width: 30
+                    width: 30,
                 },
                 { header: "City", key: "city", width: 15 },
                 { header: "State", key: "state", width: 15 },
@@ -2848,42 +2850,42 @@ export class AdminController {
                 {
                     header: "Expected Delivery",
                     key: "expectedDeliveryDate",
-                    width: 20
+                    width: 20,
                 },
                 { header: "Products", key: "products", width: 40 },
                 { header: "Order Total", key: "orderTotal", width: 12 },
                 {
                     header: "Product Discount",
                     key: "productDiscount",
-                    width: 15
+                    width: 15,
                 },
                 {
                     header: "Shipping Discount",
                     key: "shippingDiscount",
-                    width: 15
+                    width: 15,
                 },
                 { header: "Coupon Code", key: "couponCode", width: 15 },
-                { header: "Notes", key: "notes", width: 30 }
-            ];
+                { header: "Notes", key: "notes", width: 30 },
+            ]
 
             // Style the header row
-            ordersSheet.getRow(1).font = { bold: true };
+            ordersSheet.getRow(1).font = { bold: true }
             ordersSheet.getRow(1).fill = {
                 type: "pattern",
                 pattern: "solid",
-                fgColor: { argb: "FFE0E0E0" }
-            };
+                fgColor: { argb: "FFE0E0E0" },
+            }
 
             // Add orders data
             orders.forEach((order: any) => {
                 const productsText = order.products
                     .map(
                         (p: any) =>
-                            `${p.productName} (${p.quantity}x ₹${p.price})`
+                            `${p.productName} (${p.quantity}x ₹${p.price})`,
                     )
-                    .join(", ");
+                    .join(", ")
 
-                const deliveryAddress = `${order.deliveryName}, ${order.addressLine1}`;
+                const deliveryAddress = `${order.deliveryName}, ${order.addressLine1}`
 
                 ordersSheet.addRow({
                     orderId: order.orderId,
@@ -2899,35 +2901,35 @@ export class AdminController {
                     paymentMethod: order.paymentMethod,
                     shippingMethod: order.shippingMethod,
                     expectedDeliveryDate: new Date(
-                        order.expectedDeliveryDate
+                        order.expectedDeliveryDate,
                     ).toLocaleDateString(),
                     products: productsText,
                     orderTotal: `₹${order.orderTotal.toFixed(2)}`,
                     productDiscount: `₹${order.productDiscount.toFixed(2)}`,
                     shippingDiscount: `₹${(order.shippingDiscount || 0).toFixed(2)}`,
                     couponCode: order.couponCode || "",
-                    notes: order.notes || ""
-                });
-            });
+                    notes: order.notes || "",
+                })
+            })
 
             // Create Chart Data sheet
-            const chartSheet = workbook.addWorksheet("Chart Data");
+            const chartSheet = workbook.addWorksheet("Chart Data")
 
             // Define chart data columns
             chartSheet.columns = [
                 { header: "Chart Type", key: "chartType", width: 40 },
                 { header: "Category/Product", key: "category", width: 25 },
                 { header: "Total Sales", key: "value", width: 25 },
-                { header: "Percentage", key: "percentage", width: 30 }
-            ];
+                { header: "Percentage", key: "percentage", width: 30 },
+            ]
 
             // Style the header row
-            chartSheet.getRow(1).font = { bold: true };
+            chartSheet.getRow(1).font = { bold: true }
             chartSheet.getRow(1).fill = {
                 type: "pattern",
                 pattern: "solid",
-                fgColor: { argb: "FFE0E0E0" }
-            };
+                fgColor: { argb: "FFE0E0E0" },
+            }
 
             // Add chart data
             Object.entries(chartData).forEach(
@@ -2936,12 +2938,12 @@ export class AdminController {
                         const totalChartValue = chartValues.reduce(
                             (total: number, item: any) => {
                                 if (item.totalSales) {
-                                    return total + Number(item.totalSales);
+                                    return total + Number(item.totalSales)
                                 }
-                                return total;
+                                return total
                             },
-                            0
-                        );
+                            0,
+                        )
                         chartValues.forEach((value: any) => {
                             if (
                                 chartKey ===
@@ -2949,34 +2951,34 @@ export class AdminController {
                             ) {
                                 const totalQuantity =
                                     value.pendingQuantity +
-                                    value.fulfilledQuantity;
+                                    value.fulfilledQuantity
                                 const pendingPercent =
                                     (value.pendingQuantity / totalQuantity) *
-                                    100;
+                                    100
                                 const fulfilledPercent =
                                     (value.fulfilledQuantity / totalQuantity) *
-                                    100;
+                                    100
                                 const percentage = `${pendingPercent.toFixed(
-                                    2
-                                )}% Pending, ${fulfilledPercent.toFixed(2)}% Fulfilled`;
+                                    2,
+                                )}% Pending, ${fulfilledPercent.toFixed(2)}% Fulfilled`
                                 chartSheet.addRow({
                                     chartType: chartTypeKeyMap[chartKey],
                                     category: value.product,
                                     value: `Pending: ${value.pendingQuantity}, Fulfilled: ${value.fulfilledQuantity}`,
-                                    percentage
-                                });
+                                    percentage,
+                                })
                             } else {
                                 // For other chart types, determine the structure
                                 const category =
                                     value.category ||
                                     value.product ||
                                     value.name ||
-                                    value.orderStatus;
+                                    value.orderStatus
                                 const chartValue =
                                     value.totalSales ||
                                     value.quantity ||
                                     value.count ||
-                                    0;
+                                    0
                                 chartSheet.addRow({
                                     chartType: chartTypeKeyMap[chartKey],
                                     category,
@@ -2987,64 +2989,64 @@ export class AdminController {
                                     percentage:
                                         chartValue && totalChartValue
                                             ? `${(
-                                                (chartValue /
+                                                  (chartValue /
                                                       totalChartValue) *
                                                   100
-                                            ).toFixed(2)}%`
-                                            : `${0}%`
-                                });
+                                              ).toFixed(2)}%`
+                                            : `${0}%`,
+                                })
                             }
-                        });
+                        })
                     }
-                }
-            );
+                },
+            )
 
             // Auto-fit columns for both sheets
             ordersSheet.columns.forEach((column) => {
-                column.width = Math.min(column.width || 10, 50); // Max width of 50
-            });
+                column.width = Math.min(column.width || 10, 50) // Max width of 50
+            })
             chartSheet.columns.forEach((column) => {
-                column.width = Math.min(column.width || 10, 50); // Max width of 50
-            });
+                column.width = Math.min(column.width || 10, 50) // Max width of 50
+            })
 
             // Set response headers
-            const fileName = `renus-home-foods-data-${new Date().toISOString().split("T")[0]}.xlsx`;
+            const fileName = `renus-home-foods-data-${new Date().toISOString().split("T")[0]}.xlsx`
             res.setHeader(
                 "Content-Type",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            );
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
             res.setHeader(
                 "Content-Disposition",
-                `attachment; filename="${fileName}"`
-            );
+                `attachment; filename="${fileName}"`,
+            )
 
             // Write workbook to response
-            await workbook.xlsx.write(res);
-            res.end();
+            await workbook.xlsx.write(res)
+            res.end()
         } catch (error) {
             const cleanMessage = `Error in exportExcelData: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
                 "Unknown error"
-            }`;
-            const err = new Error(cleanMessage);
-            err.stack = error.stack;
+            }`
+            const err = new Error(cleanMessage)
+            err.stack = error.stack
 
-            logger.error(err);
+            logger.error(err)
             if (error instanceof HttpException) {
-                throw error;
+                throw error
             }
             const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
+                error instanceof Error ? error.message : "Unknown error"
             throw new HttpException(
                 {
                     error: encryptPayload({
-                        error: `Failed to export Excel data. ${errorMessage}`
-                    })
+                        error: `Failed to export Excel data. ${errorMessage}`,
+                    }),
                 },
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            )
         }
     }
 }

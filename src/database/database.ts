@@ -1,6 +1,6 @@
-import * as dotenv from "dotenv";
-import { Sequelize } from "sequelize";
-dotenv.config();
+import * as dotenv from "dotenv"
+import { Sequelize } from "sequelize"
+dotenv.config({ quiet: true })
 export const sequelize = new Sequelize(
     process.env.DB_NAME || "",
     process.env.DB_USERNAME || "",
@@ -10,7 +10,7 @@ export const sequelize = new Sequelize(
         dialect: "mysql",
         logging: process.env.SQL_LOGGING === "true", // Set to true for SQL query logging
         dialectOptions: {
-            multipleStatements: true // Enable multiple statements for stored procedures
-        }
-    }
-);
+            multipleStatements: true, // Enable multiple statements for stored procedures
+        },
+    },
+)
