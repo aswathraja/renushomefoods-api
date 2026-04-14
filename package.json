@@ -10,7 +10,7 @@
     "scripts": {
         "format": "prettier --write .",
         "format:check": "prettier --check . --ignore-unknown",
-        "prepare": "node scripts/prepare.mjs || true",
+        "prepare": "node scripts/prepare.mjs",
         "build": "nest build",
         "start": "node scripts/start.mjs",
         "start:dev": "nest start --watch",
