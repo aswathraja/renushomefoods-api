@@ -1,13 +1,13 @@
-import { Module, OnModuleInit } from '@nestjs/common'
-import { AdminController } from './controllers/admin.controller'
-import { AppController } from './controllers/app.controller'
-import { InventoryController } from './controllers/inventory.controller'
-import { OrderController } from './controllers/order.controller'
-import { UserController } from './controllers/user.controller'
-import { connectToDatabase } from './database/db'
-import { AppService } from './services/app.service'
-import { AdminDashboardPdfService } from './services/dashboard.service'
-import { ShippingService } from './services/shipping.service'
+import { Module, OnModuleInit } from "@nestjs/common";
+import { AdminController } from "./controllers/admin.controller";
+import { AppController } from "./controllers/app.controller";
+import { InventoryController } from "./controllers/inventory.controller";
+import { OrderController } from "./controllers/order.controller";
+import { UserController } from "./controllers/user.controller";
+import { connectToDatabase } from "./database/db";
+import { AppService } from "./services/app.service";
+import { AdminDashboardPdfService } from "./services/dashboard.service";
+import { ShippingService } from "./services/shipping.service";
 
 @Module({
     imports: [
@@ -22,12 +22,12 @@ import { ShippingService } from './services/shipping.service'
         AdminController,
         UserController,
         OrderController,
-        InventoryController,
+        InventoryController
     ],
-    providers: [AppService, ShippingService, AdminDashboardPdfService],
+    providers: [AppService, ShippingService, AdminDashboardPdfService]
 })
 export class AppModule implements OnModuleInit {
     async onModuleInit() {
-        await connectToDatabase()
+        await connectToDatabase();
     }
 }

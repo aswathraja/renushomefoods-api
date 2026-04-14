@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common'
-import { readFileSync } from 'fs'
-import Handlebars from 'handlebars'
-import * as nodemailer from 'nodemailer'
-import { join, resolve } from 'path'
-import puppeteer from 'puppeteer'
-import { logger } from '../logger/logger'
+import { Injectable } from "@nestjs/common";
+import { readFileSync } from "fs";
+import Handlebars from "handlebars";
+import * as nodemailer from "nodemailer";
+import { join, resolve } from "path";
+import puppeteer from "puppeteer";
+import { logger } from "../logger/logger";
 import {
     Cart,
     CartProduct,
@@ -16,21 +16,19 @@ import {
     PriceList,
     Product,
     User,
-    UserAddress,
-} from '../models/models'
-import { ShippingService } from './shipping.service'
+    UserAddress
+} from "../models/models";
+import { ShippingService } from "./shipping.service";
 
 // Register Handlebars helpers
-Handlebars.registerHelper('eq', function (a, b) {
-    return a === b
-})
+Handlebars.registerHelper("eq", (a, b) => a === b);
 
 @Injectable()
 export class AppService {
     constructor(private shippingService: ShippingService) {}
 
     getHello(): string {
-        return 'Hello World!'
+        return "Hello World!";
     }
 
     /**
@@ -40,16 +38,16 @@ export class AppService {
      */
     public generateRandomNumber(length: number): string {
         if (length <= 0) {
-            throw new Error('Length must be a positive integer.')
+            throw new Error("Length must be a positive integer.");
         }
-        const min = Math.pow(10, length - 1)
-        const max = Math.pow(10, length) - 1
-        const randomNumber = Math.floor(Math.random() * (max - min + 1)) + min
-        return randomNumber.toString()
+        const min = Math.pow(10, length - 1);
+        const max = Math.pow(10, length) - 1;
+        const randomNumber = Math.floor(Math.random() * (max - min + 1)) + min;
+        return randomNumber.toString();
     }
 
     public maskEmail(email: string): string {
-        return email.replace(/(.{2}).*(@.*)/, '$1***$2')
+        return email.replace(/(.{2}).*(@.*)/, "$1***$2");
     }
 
     /**
@@ -59,11 +57,11 @@ export class AppService {
      * @returns The parsed number or 0.
      */
     public sanitizeStringToNumber(value: string | null | undefined): number {
-        if (Boolean(value) === false) return 0
-        if (typeof value === 'number') return value
-        const cleaned = value.replace(/₹|\s/g, '')
-        const num = parseFloat(cleaned)
-        return isNaN(num) ? 0 : num
+        if (Boolean(value) === false) {return 0;}
+        if (typeof value === "number") {return value;}
+        const cleaned = value.replace(/₹|\s/g, "");
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? 0 : num;
     }
 
     /**
@@ -79,84 +77,84 @@ export class AppService {
                 include: [
                     {
                         model: UserAddress,
-                        as: 'UserAddress',
+                        as: "UserAddress",
                         include: [
                             {
                                 model: User,
-                                as: 'User',
-                            },
-                        ],
+                                as: "User"
+                            }
+                        ]
                     },
                     {
                         model: Cart,
-                        as: 'Cart',
+                        as: "Cart",
                         include: [
                             {
                                 model: CartProduct,
-                                as: 'CartProducts',
+                                as: "CartProducts",
                                 include: [
                                     {
                                         model: Product,
-                                        as: 'Product',
+                                        as: "Product"
                                     },
                                     {
                                         model: PriceList,
-                                        as: 'PriceList',
-                                        attributes: { exclude: ['bomCost'] },
-                                    },
-                                ],
-                            },
-                        ],
+                                        as: "PriceList",
+                                        attributes: { exclude: ["bomCost"] }
+                                    }
+                                ]
+                            }
+                        ]
                     },
                     {
                         model: OrderCoupon,
-                        as: 'OrderCoupons',
+                        as: "OrderCoupons",
                         include: [
                             {
                                 model: CouponCode,
-                                as: 'CouponCode',
+                                as: "CouponCode",
                                 include: [
                                     {
                                         model: CouponDiscounts,
-                                        as: 'CouponDiscounts',
+                                        as: "CouponDiscounts"
                                     },
                                     {
                                         model: CouponProducts,
-                                        as: 'CouponProducts',
+                                        as: "CouponProducts",
                                         include: [
                                             {
                                                 model: Product,
-                                                as: 'Product',
-                                            },
-                                        ],
-                                    },
-                                ],
-                            },
-                        ],
-                    },
-                ],
-            })
+                                                as: "Product"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            });
 
             if (!order) {
-                throw new Error('Order not found')
+                throw new Error("Order not found");
             }
 
             // Format billing address
-            const billingAddress = `${order.toJSON().UserAddress.name}<br/>${order.toJSON().UserAddress.addressLine1}<br/>${order.toJSON().UserAddress.city}, ${order.toJSON().UserAddress.state}<br/>${order.toJSON().UserAddress.country} - ${order.toJSON().UserAddress.pincode}`
+            const billingAddress = `${order.toJSON().UserAddress.name}<br/>${order.toJSON().UserAddress.addressLine1}<br/>${order.toJSON().UserAddress.city}, ${order.toJSON().UserAddress.state}<br/>${order.toJSON().UserAddress.country} - ${order.toJSON().UserAddress.pincode}`;
 
             // Extract user contact details
-            const userEmail = order.toJSON().UserAddress.User.email
-            const userPhone = order.toJSON().UserAddress.User.phone
+            const userEmail = order.toJSON().UserAddress.User.email;
+            const userPhone = order.toJSON().UserAddress.User.phone;
 
             // Determine shipping address
-            let shippingAddress: string
-            if (order.toJSON().shippingMethod === 'Home Delivery') {
-                shippingAddress = billingAddress // Same as billing
-            } else if (order.toJSON().shippingMethod === 'Free Store Pickup') {
+            let shippingAddress: string;
+            if (order.toJSON().shippingMethod === "Home Delivery") {
+                shippingAddress = billingAddress; // Same as billing
+            } else if (order.toJSON().shippingMethod === "Free Store Pickup") {
                 shippingAddress =
-                    'D2, Vaigundar Villa<br/>Sumangali Manasarovar Garden<br/>Paruthipattu<br/>Chennai - 600071'
+                    "D2, Vaigundar Villa<br/>Sumangali Manasarovar Garden<br/>Paruthipattu<br/>Chennai - 600071";
             } else {
-                shippingAddress = 'Unknown'
+                shippingAddress = "Unknown";
             }
 
             // Calculate items with totals
@@ -165,12 +163,12 @@ export class AppService {
                 .Cart.CartProducts.map((cartProduct) => ({
                     name: cartProduct.Product?.name,
                     quantity: cartProduct.quantity,
-                    weight: cartProduct.PriceList?.weight || 'N/A',
+                    weight: cartProduct.PriceList?.weight || "N/A",
                     price: cartProduct.PriceList.unitprice.toFixed(2),
                     total: (
                         cartProduct.quantity * cartProduct.PriceList.unitprice
-                    ).toFixed(2),
-                }))
+                    ).toFixed(2)
+                }));
 
             // Calculate subtotal
             const subtotal = order
@@ -179,55 +177,55 @@ export class AppService {
                     (sum, cartProduct) =>
                         sum +
                         cartProduct.quantity * cartProduct.PriceList.unitprice,
-                    0,
-                )
+                    0
+                );
 
             // Calculate coupon discount
-            let totalDiscount = 0
-            const orderCoupons = order.toJSON().OrderCoupons
+            let totalDiscount = 0;
+            const orderCoupons = order.toJSON().OrderCoupons;
             if (
                 orderCoupons &&
                 orderCoupons.length > 0 &&
                 orderCoupons[0]?.CouponCode?.CouponDiscounts?.length > 0
             ) {
-                const orderCoupon = orderCoupons[0] // Assuming one coupon per order
-                const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts
-                const couponProducts = orderCoupon.CouponCode.CouponProducts
+                const orderCoupon = orderCoupons[0]; // Assuming one coupon per order
+                const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts;
+                const couponProducts = orderCoupon.CouponCode.CouponProducts;
 
                 // Get applicable products
                 const applicableProductIds = couponProducts.map(
-                    (cp) => cp.productId,
-                )
+                    (cp) => cp.productId
+                );
 
                 couponDiscounts.forEach((discount) => {
-                    let discountAmount = 0
+                    let discountAmount = 0;
                     if (applicableProductIds.length === 0) {
                         // Applies to all products
                         if (discount.flatrate) {
-                            discountAmount = discount.discount
+                            discountAmount = discount.discount;
                         } else {
                             discountAmount =
-                                subtotal * (discount.discount / 100)
+                                subtotal * (discount.discount / 100);
                         }
                     } else {
                         // Applies to specific products
                         const applicableSubtotal = order
                             .toJSON()
                             .Cart.CartProducts.filter((cp) =>
-                                applicableProductIds.includes(cp.productId),
+                                applicableProductIds.includes(cp.productId)
                             )
                             .reduce(
                                 (sum, cartProduct) =>
                                     sum +
                                     cartProduct.quantity *
                                         cartProduct.PriceList.unitprice,
-                                0,
-                            )
+                                0
+                            );
                         if (discount.flatrate) {
                             discountAmount = order
                                 .toJSON()
                                 .Cart.CartProducts.filter((cp) =>
-                                    applicableProductIds.includes(cp.productId),
+                                    applicableProductIds.includes(cp.productId)
                                 )
                                 .reduce(
                                     (sum, cp) =>
@@ -235,47 +233,47 @@ export class AppService {
                                         (cp.PriceList.unitprice -
                                             discount.discount) *
                                             cp.quantity,
-                                    0,
-                                )
+                                    0
+                                );
                         } else {
                             discountAmount =
-                                applicableSubtotal * (discount.discount / 100)
+                                applicableSubtotal * (discount.discount / 100);
                         }
                     }
-                    if (discount.name !== 'Shipping') {
-                        totalDiscount += discountAmount
+                    if (discount.name !== "Shipping") {
+                        totalDiscount += discountAmount;
                     }
-                })
+                });
             }
 
             // Adjust subtotal after discount
-            const adjustedSubtotal = subtotal - totalDiscount
+            const adjustedSubtotal = subtotal - totalDiscount;
 
             // Calculate order weight from cart products
-            const cartProducts = order.toJSON().Cart.CartProducts
+            const cartProducts = order.toJSON().Cart.CartProducts;
             const orderWeight = this.shippingService.calculateOrderWeight(
                 cartProducts.map((cp) => ({
-                    weight: cp.PriceList?.weight || '0g',
-                    quantity: cp.quantity,
-                })),
-            )
+                    weight: cp.PriceList?.weight || "0g",
+                    quantity: cp.quantity
+                }))
+            );
 
             // Get pincode from shipping address
-            const pincode = order.toJSON().UserAddress?.pincode || ''
-            const shippingMethod = order.toJSON().shippingMethod
+            const pincode = order.toJSON().UserAddress?.pincode || "";
+            const {shippingMethod} = order.toJSON();
 
             // Get shipping discount from coupons
-            let shippingDiscountObj = null
+            let shippingDiscountObj = null;
             if (
                 orderCoupons &&
                 orderCoupons.length > 0 &&
                 orderCoupons[0]?.CouponCode?.CouponDiscounts?.length > 0
             ) {
                 const couponDiscounts =
-                    orderCoupons[0].CouponCode.CouponDiscounts
+                    orderCoupons[0].CouponCode.CouponDiscounts;
                 shippingDiscountObj = couponDiscounts.find(
-                    (d) => d.name === 'Shipping',
-                )
+                    (d) => d.name === "Shipping"
+                );
             }
 
             // Calculate shipping using the new shipping service
@@ -283,37 +281,37 @@ export class AppService {
                 pincode,
                 orderWeight,
                 shippingMethod,
-                shippingDiscountObj,
-            )
+                shippingDiscountObj
+            );
 
             // Format shipping for display
-            let shipping: string | boolean
+            let shipping: string | boolean;
             if (shippingDetails.isFree && shippingDetails.baseCost > 0) {
-                shipping = '<strong>Free</strong>'
+                shipping = "<strong>Free</strong>";
             } else if (shippingDetails.finalCost > 0) {
-                shipping = `₹${shippingDetails.finalCost.toFixed(2)}`
+                shipping = `₹${shippingDetails.finalCost.toFixed(2)}`;
             } else {
-                shipping = '<strong>Free</strong>'
+                shipping = "<strong>Free</strong>";
             }
 
             // Calculate total
             const total =
-                adjustedSubtotal + this.sanitizeStringToNumber(shipping)
+                adjustedSubtotal + this.sanitizeStringToNumber(shipping);
             return {
-                logo: 'https://renushomefoods.com/static/logo.png',
+                logo: "https://renushomefoods.com/static/logo.png",
                 message,
                 billingAddress,
                 billingEmail: userEmail,
                 billingPhone: userPhone,
                 shippingAddress,
                 shippingEmail:
-                    order.toJSON().shippingMethod === 'Home Delivery'
+                    order.toJSON().shippingMethod === "Home Delivery"
                         ? userEmail
-                        : 'renushomefoods@gmail.com',
+                        : "renushomefoods@gmail.com",
                 shippingPhone:
-                    order.toJSON().shippingMethod === 'Home Delivery'
+                    order.toJSON().shippingMethod === "Home Delivery"
                         ? userPhone
-                        : '+91 93637-20792',
+                        : "+91 93637-20792",
                 items,
                 subtotal: subtotal.toFixed(2),
                 shipping,
@@ -322,27 +320,27 @@ export class AppService {
                 orderId: order.toJSON().id,
                 orderDate: this.formatDate(
                     new Date(order.toJSON().orderedDate),
-                    true,
+                    true
                 ),
-                pan: '',
-                gst: '',
-                cin: '',
-                phone: '+91 93637-20792',
-                email: 'renushomefoods@gmail.com',
-                paymentMethod: order.toJSON().paymentMethod || '',
-                shippingMethod: order.toJSON().shippingMethod || '',
+                pan: "",
+                gst: "",
+                cin: "",
+                phone: "+91 93637-20792",
+                email: "renushomefoods@gmail.com",
+                paymentMethod: order.toJSON().paymentMethod || "",
+                shippingMethod: order.toJSON().shippingMethod || "",
                 adminMsgId: order.toJSON().adminMsgId,
                 userMsgId: order.toJSON().userMsgId,
                 couponCode:
-                    order.toJSON().OrderCoupons?.[0]?.CouponCode?.code || '',
+                    order.toJSON().OrderCoupons?.[0]?.CouponCode?.code || "",
                 totalDiscount:
                     totalDiscount > 0 ? totalDiscount.toFixed(2) : undefined,
                 orderNotes:
-                    order.toJSON().notes?.replace(/\n/gim, '<br/>') || '',
-            }
+                    order.toJSON().notes?.replace(/\n/gim, "<br/>") || ""
+            };
         } catch (error) {
-            logger.error('Error fetching order invoice data:', error)
-            throw error
+            logger.error("Error fetching order invoice data:", error);
+            throw error;
         }
     }
 
@@ -352,17 +350,17 @@ export class AppService {
      * @returns Formatted date string.
      */
     public formatDate(date: Date, includeTimestamp: boolean = true): string {
-        const day = String(date.getDate()).padStart(2, '0')
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const year = date.getFullYear()
-        const hours = date.getHours()
-        const minutes = String(date.getMinutes()).padStart(2, '0')
-        const seconds = String(date.getSeconds()).padStart(2, '0')
-        const ampm = hours >= 12 ? 'PM' : 'AM'
-        const formattedHours = hours % 12 || 12
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const year = date.getFullYear();
+        const hours = date.getHours();
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        const seconds = String(date.getSeconds()).padStart(2, "0");
+        const ampm = hours >= 12 ? "PM" : "AM";
+        const formattedHours = hours % 12 || 12;
         return includeTimestamp === true
             ? `${day}/${month}/${year} ${formattedHours}:${minutes}:${seconds} ${ampm}`
-            : `${day}/${month}/${year}`
+            : `${day}/${month}/${year}`;
     }
 
     /**
@@ -374,13 +372,13 @@ export class AppService {
     private renderTemplate(template: string, data: any): string {
         const templatePath = join(
             resolve(__dirname),
-            '../',
-            'templates',
-            `${template}.html`,
-        )
-        const templateSource = readFileSync(templatePath, 'utf8')
-        const compiledTemplate = Handlebars.compile(templateSource)
-        return compiledTemplate(data)
+            "../",
+            "templates",
+            `${template}.html`
+        );
+        const templateSource = readFileSync(templatePath, "utf8");
+        const compiledTemplate = Handlebars.compile(templateSource);
+        return compiledTemplate(data);
     }
 
     /**
@@ -393,64 +391,64 @@ export class AppService {
             // Fetch order invoice data with a default message
             const invoiceData = await this.getOrderInvoiceData(
                 orderId,
-                'Thank you for your order. Please find the invoice below.',
-            )
+                "Thank you for your order. Please find the invoice below."
+            );
 
             // Render the HTML template
-            const html = this.renderTemplate('order-invoice', invoiceData)
+            const html = this.renderTemplate("order-invoice", invoiceData);
 
             // Launch Puppeteer browser
             const browser = await puppeteer.launch({
                 headless: true,
                 executablePath: process.env.CHROME_PATH,
                 args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--disable-features=TranslateUI',
-                    '--disable-ipc-flooding-protection',
-                ],
-            })
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=TranslateUI",
+                    "--disable-ipc-flooding-protection"
+                ]
+            });
 
-            const page = await browser.newPage()
+            const page = await browser.newPage();
 
             // Set the HTML content
-            await page.setContent(html, { waitUntil: 'networkidle0' })
+            await page.setContent(html, { waitUntil: "networkidle0" });
 
             // Generate PDF with settings to match the email template
             const pdfBuffer = await page.pdf({
-                format: 'A4',
+                format: "A4",
                 printBackground: true,
                 margin: {
-                    top: '10px',
-                    right: '10px',
-                    bottom: '10px',
-                    left: '10px',
-                },
-            })
+                    top: "10px",
+                    right: "10px",
+                    bottom: "10px",
+                    left: "10px"
+                }
+            });
 
             // Close the browser
-            await browser.close()
+            await browser.close();
 
-            logger.info(`✅ PDF generated for order ${orderId}`)
-            return Buffer.from(pdfBuffer)
+            logger.info(`✅ PDF generated for order ${orderId}`);
+            return Buffer.from(pdfBuffer);
         } catch (error) {
             const cleanMessage = `Error in generateOrderInvoicePDF: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
-                'Unknown error'
-            }`
-            const err = new Error(cleanMessage)
-            err.stack = error.stack // keep original stack
+                "Unknown error"
+            }`;
+            const err = new Error(cleanMessage);
+            err.stack = error.stack; // keep original stack
 
-            logger.error(err)
-            throw error
+            logger.error(err);
+            throw error;
         }
     }
 
@@ -463,39 +461,39 @@ export class AppService {
                 include: [
                     {
                         model: UserAddress,
-                        as: 'UserAddress',
-                        include: [{ model: User, as: 'User' }],
-                    },
-                ],
-            })
+                        as: "UserAddress",
+                        include: [{ model: User, as: "User" }]
+                    }
+                ]
+            });
 
             if (!order) {
-                throw new Error('Order not found')
+                throw new Error("Order not found");
             }
 
-            const address = order.toJSON().UserAddress
-            const user = address.User || {}
+            const address = order.toJSON().UserAddress;
+            const user = address.User || {};
 
             const userAddressLines = [
-                address.addressLine1 || '',
-                `${address.city || ''}, ${address.state || ''}`,
-                `${address.country || 'India'} - ${address.pincode || ''}`,
+                address.addressLine1 || "",
+                `${address.city || ""}, ${address.state || ""}`,
+                `${address.country || "India"} - ${address.pincode || ""}`
             ]
                 .filter((line) => line.trim())
-                .join('<br/>')
+                .join("<br/>");
 
             return {
                 orderId: order.toJSON().id,
-                awb: order.toJSON().awb || 'Pending',
+                awb: order.toJSON().awb || "Pending",
                 courier: order.toJSON().courier,
                 orderDate: this.formatDate(new Date(order.toJSON().createdAt)),
-                userName: address.name || 'Customer',
+                userName: address.name || "Customer",
                 userAddress: userAddressLines,
-                userPhone: address.phone || user.phone || 'N/A',
-            }
+                userPhone: address.phone || user.phone || "N/A"
+            };
         } catch (error) {
-            logger.error('Error fetching shipping label data:', error)
-            throw error
+            logger.error("Error fetching shipping label data:", error);
+            throw error;
         }
     }
 
@@ -504,52 +502,52 @@ export class AppService {
      */
     public async generateShippingLabelPDF(orderId: string): Promise<Buffer> {
         try {
-            const labelData = await this.getShippingLabelData(orderId)
+            const labelData = await this.getShippingLabelData(orderId);
 
-            const html = this.renderTemplate('shipping-label', labelData)
+            const html = this.renderTemplate("shipping-label", labelData);
 
             const browser = await puppeteer.launch({
                 headless: true,
                 executablePath: process.env.CHROME_PATH,
                 args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--disable-features=TranslateUI',
-                    '--disable-ipc-flooding-protection',
-                ],
-            })
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=TranslateUI",
+                    "--disable-ipc-flooding-protection"
+                ]
+            });
 
-            const page = await browser.newPage()
-            await page.setContent(html, { waitUntil: 'networkidle0' })
+            const page = await browser.newPage();
+            await page.setContent(html, { waitUntil: "networkidle0" });
 
             const pdfBuffer = await page.pdf({
                 format: undefined,
-                width: '4in',
-                height: '8in',
+                width: "4in",
+                height: "8in",
                 printBackground: true,
                 margin: {
-                    top: '2mm',
-                    right: '2mm',
-                    bottom: '2mm',
-                    left: '2mm',
-                },
-            })
+                    top: "2mm",
+                    right: "2mm",
+                    bottom: "2mm",
+                    left: "2mm"
+                }
+            });
 
-            await browser.close()
+            await browser.close();
 
-            logger.info(`✅ Shipping label PDF generated for order ${orderId}`)
-            return Buffer.from(pdfBuffer)
+            logger.info(`✅ Shipping label PDF generated for order ${orderId}`);
+            return Buffer.from(pdfBuffer);
         } catch (error) {
             logger.error(
-                `Error generating shipping label PDF: ${error.message}`,
-            )
-            throw error
+                `Error generating shipping label PDF: ${error.message}`
+            );
+            throw error;
         }
     }
 
@@ -560,7 +558,7 @@ export class AppService {
         to,
         subject,
         template,
-        data,
+        data
     }: {
         to: string
         subject: string
@@ -568,29 +566,29 @@ export class AppService {
         data: any
     }) {
         try {
-            const enableEmail = process.env.ENABLE_EMAIL !== 'false'
+            const enableEmail = process.env.ENABLE_EMAIL !== "false";
             if (!enableEmail) {
                 logger.info(
-                    'Email sending disabled via ENABLE_EMAIL ENV variable set to false but it should work in production where it is enabled',
-                )
-                return { success: true, message: 'Email sending disabled' }
+                    "Email sending disabled via ENABLE_EMAIL ENV variable set to false but it should work in production where it is enabled"
+                );
+                return { success: true, message: "Email sending disabled" };
             }
 
             const fromAddress =
-                template === 'order-invoice'
+                template === "order-invoice"
                     ? process.env.ORDERS_EMAIL
-                    : process.env.CONTACT_EMAIL
+                    : process.env.CONTACT_EMAIL;
             const transporter = nodemailer.createTransport({
-                host: process.env.SMTP_HOST || 'smtp.gmail.com',
+                host: process.env.SMTP_HOST || "smtp.gmail.com",
                 port: Number(process.env.SMTP_PORT) || 587,
                 secure: false,
                 auth: {
                     user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASS,
-                },
-            })
+                    pass: process.env.SMTP_PASS
+                }
+            });
 
-            const html = this.renderTemplate(template, data)
+            const html = this.renderTemplate(template, data);
 
             const info = await transporter.sendMail({
                 from: `"Renu's Home Foods" <${fromAddress}>`,
@@ -598,35 +596,35 @@ export class AppService {
                 subject,
                 html,
                 headers: {
-                    'In-Reply-To':
+                    "In-Reply-To":
                         to === process.env.ORDERS_EMAIL
                             ? data?.adminMsgId
                             : data?.userMsgId
-                              ? data?.userMsgId
-                              : undefined,
+                                ? data?.userMsgId
+                                : undefined,
                     References:
                         to === process.env.ORDERS_EMAIL
                             ? data?.adminMsgId
                             : data?.userMsgId
-                              ? data?.userMsgId
-                              : undefined,
-                },
-            })
+                                ? data?.userMsgId
+                                : undefined
+                }
+            });
 
-            logger.info('✅ Email sent')
-            return { success: true, messageId: info.messageId }
+            logger.info("✅ Email sent");
+            return { success: true, messageId: info.messageId };
         } catch (error) {
             const cleanMessage = `Error in sendMail: ${
                 error?.original?.sqlMessage ||
                 error?.parent?.sqlMessage ||
                 error.message ||
-                'Unknown error'
-            }`
-            const err = new Error(cleanMessage)
-            err.stack = error.stack // keep original stack
+                "Unknown error"
+            }`;
+            const err = new Error(cleanMessage);
+            err.stack = error.stack; // keep original stack
 
-            logger.error(err) // Winston now logs message + stack
-            return { success: false, error }
+            logger.error(err); // Winston now logs message + stack
+            return { success: false, error };
         }
     }
 }
