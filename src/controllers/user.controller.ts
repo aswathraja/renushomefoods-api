@@ -1191,7 +1191,7 @@ export class UserController {
                 response: encryptPayload({
                     status: 'ok',
                     ...(newToken && { newToken }),
-                    user: user,
+                    user,
                     roles: [...user.toJSON().roles],
                     isAdmin: user
                         .toJSON()

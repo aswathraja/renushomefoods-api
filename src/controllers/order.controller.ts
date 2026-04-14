@@ -191,7 +191,7 @@ export class OrderController {
             const orderJSON = order.toJSON()
 
             // Calculate subtotal
-            const subtotal = orderJSON.Cart.CartProducts.reduce(
+            let subtotal = orderJSON.Cart.CartProducts.reduce(
                 (sum, cartProduct) =>
                     sum +
                     cartProduct.quantity * cartProduct.PriceList.unitprice,
@@ -200,14 +200,13 @@ export class OrderController {
 
             // Calculate coupon discount
             let totalDiscount = 0
-            let shippingDiscount = 0
             const orderCoupons = orderJSON.OrderCoupons
+            // Calculate product discounts only (Shipping handled separately by shipping service)
             if (orderCoupons && orderCoupons.length > 0) {
-                const orderCoupon = orderCoupons[0] // Assuming one coupon per order
+                const orderCoupon = orderCoupons[0]
                 const couponDiscounts = orderCoupon.CouponCode.CouponDiscounts
                 const couponProducts = orderCoupon.CouponCode.CouponProducts
 
-                // Get applicable products
                 const applicableProductIds = couponProducts.map(
                     (cp) => cp.productId,
                 )
@@ -215,7 +214,6 @@ export class OrderController {
                 couponDiscounts.forEach((discount) => {
                     let discountAmount = 0
                     if (applicableProductIds.length === 0) {
-                        // Applies to all products
                         if (discount.flatrate) {
                             discountAmount = discount.discount
                         } else {
@@ -223,7 +221,6 @@ export class OrderController {
                                 subtotal * (discount.discount / 100)
                         }
                     } else {
-                        // Applies to specific products
                         const applicableSubtotal =
                             orderJSON.Cart.CartProducts.filter((cp) =>
                                 applicableProductIds.includes(cp.productId),
@@ -246,30 +243,9 @@ export class OrderController {
                                         cp.quantity,
                                 0,
                             )
-                            if (
-                                discount.name === 'Shipping' &&
-                                discount.flatrate
-                            ) {
-                                shippingDiscount = 99 - discount.discount
-                            } else if (
-                                discount.name === 'Shipping' &&
-                                discount.flatrate === false
-                            ) {
-                                shippingDiscount =
-                                    99 - 99 * (discount.discount / 100)
-                            }
                         } else {
                             discountAmount =
                                 applicableSubtotal * (discount.discount / 100)
-                        }
-
-                        if (discount.name === 'Shipping' && discount.flatrate) {
-                            shippingDiscount = 99 - discount.discount
-                        } else if (
-                            discount.name === 'Shipping' &&
-                            discount.flatrate === false
-                        ) {
-                            shippingDiscount = 99 * (discount.discount / 100)
                         }
                     }
                     if (discount.name !== 'Shipping') {
@@ -280,9 +256,21 @@ export class OrderController {
 
             // Format products from cart
             let products: any[] = []
-            const cart = orderJSON.Cart
-            if (cart && cart.CartProducts) {
-                products = cart.CartProducts.map((cp: any) => ({
+            const cartProducts = orderJSON.Cart?.CartProducts || []
+
+            // Initialize shippingDetails with fallback for empty carts
+            let shippingDetails: any = {
+                baseCost: 0,
+                discount: 0,
+                finalCost: 0,
+                isFree: false,
+                zone: 'N/A',
+                weightCategory: 'N/A',
+                message: 'No items',
+            }
+
+            if (cartProducts.length > 0) {
+                products = cartProducts.map((cp: any) => ({
                     productId: cp.productId,
                     name: cp.Product?.name,
                     tagline: cp.Product?.tagline,
@@ -298,15 +286,52 @@ export class OrderController {
                         : undefined,
                     quantity: cp.quantity,
                 }))
+
+                // Calculate proper shipping using shipping service (matches app.service.ts)
+                const orderWeight = this.shippingService.calculateOrderWeight(
+                    cartProducts.map((cp) => ({
+                        weight: cp.PriceList?.weight || '0g',
+                        quantity: cp.quantity,
+                    })),
+                )
+                const pincode = orderJSON.UserAddress?.pincode || ''
+                const shippingMethod =
+                    orderJSON.shippingMethod || 'Home Delivery'
+                let shippingDiscountObj = null
+                if (orderCoupons?.length > 0) {
+                    shippingDiscountObj =
+                        orderCoupons[0].CouponCode.CouponDiscounts?.find(
+                            (d) => d.name === 'Shipping',
+                        )
+                }
+                shippingDetails = this.shippingService.getShippingDetails(
+                    pincode,
+                    orderWeight,
+                    shippingMethod,
+                    shippingDiscountObj,
+                )
+
+                // Recalculate subtotal (in case changed above)
+                subtotal = cartProducts.reduce(
+                    (sum, cartProduct) =>
+                        sum +
+                        cartProduct.quantity * cartProduct.PriceList.unitprice,
+                    0,
+                )
             }
 
             // Format order object
             const couponCode =
-                orderCoupons.length > 0
+                orderCoupons?.length > 0
                     ? orderCoupons[0]?.CouponCode?.code
                     : undefined
             const address = orderJSON.UserAddress
             const user = orderJSON.user
+
+            // Use proper shipping cost instead of hardcoded 99
+            const finalShippingCost = shippingDetails.finalCost
+            const totalAmount = subtotal + finalShippingCost - totalDiscount
+
             const orderObj = {
                 id: orderJSON.id,
                 name: address?.name,
@@ -324,16 +349,18 @@ export class OrderController {
                 status: orderJSON.status,
                 orderedDate: orderJSON.orderedDate,
                 expectedDeliveryDate: orderJSON.expectedDeliveryDate,
+                totalAmount,
+                shippingDetails, // Include for frontend display
             }
             const encryptedResponse = {
                 response: encryptPayload({
                     orders: [
                         {
-                            cartId: cart?.id,
+                            cartId: orderJSON.Cart?.id,
                             order: orderObj,
                             products,
                             totalDiscount,
-                            shippingDiscount,
+                            shippingDetails, // Replace old shippingDiscount with full details
                             couponCode,
                         },
                     ],
@@ -1241,24 +1268,22 @@ export class OrderController {
                 const orderJSON = order.toJSON()
 
                 // Calculate subtotal
-                const subtotal = orderJSON.Cart.CartProducts.reduce(
+                let subtotal = orderJSON.Cart.CartProducts.reduce(
                     (sum, cartProduct) =>
                         sum +
                         cartProduct.quantity * cartProduct.PriceList.unitprice,
                     0,
                 )
 
-                // Calculate coupon discount
+                // Calculate product discounts only (Shipping handled separately)
                 let totalDiscount = 0
-                let shippingDiscount = 0
                 const orderCoupons = orderJSON.OrderCoupons
                 if (orderCoupons && orderCoupons.length > 0) {
-                    const orderCoupon = orderCoupons[0] // Assuming one coupon per order
+                    const orderCoupon = orderCoupons[0]
                     const couponDiscounts =
                         orderCoupon.CouponCode.CouponDiscounts
                     const couponProducts = orderCoupon.CouponCode.CouponProducts
 
-                    // Get applicable products
                     const applicableProductIds = couponProducts.map(
                         (cp) => cp.productId,
                     )
@@ -1266,7 +1291,6 @@ export class OrderController {
                     couponDiscounts.forEach((discount) => {
                         let discountAmount = 0
                         if (applicableProductIds.length === 0) {
-                            // Applies to all products
                             if (discount.flatrate) {
                                 discountAmount = discount.discount
                             } else {
@@ -1274,7 +1298,6 @@ export class OrderController {
                                     subtotal * (discount.discount / 100)
                             }
                         } else {
-                            // Applies to specific products
                             const applicableSubtotal =
                                 orderJSON.Cart.CartProducts.filter((cp) =>
                                     applicableProductIds.includes(cp.productId),
@@ -1310,27 +1333,27 @@ export class OrderController {
                                     totalDiscount += discountAmount
                                 }
                             }
-                            if (
-                                discount.name === 'Shipping' &&
-                                discount.flatrate
-                            ) {
-                                shippingDiscount = 99 - discount.discount
-                            } else if (
-                                discount.name === 'Shipping' &&
-                                discount.flatrate === false
-                            ) {
-                                shippingDiscount =
-                                    99 - 99 * (discount.discount / 100)
-                            }
                         }
                     })
                 }
 
                 // Format products from cart
                 let products: any[] = []
-                const cart = orderJSON.Cart
-                if (cart && cart.CartProducts) {
-                    products = cart.CartProducts.map((cp: any) => ({
+                const cartProducts = orderJSON.Cart?.CartProducts || []
+
+                // Initialize shippingDetails with fallback for empty carts
+                let shippingDetails: any = {
+                    baseCost: 0,
+                    discount: 0,
+                    finalCost: 0,
+                    isFree: false,
+                    zone: 'N/A',
+                    weightCategory: 'N/A',
+                    message: 'No items',
+                }
+
+                if (cartProducts.length > 0) {
+                    products = cartProducts.map((cp: any) => ({
                         productId: cp.productId,
                         name: cp.Product?.name,
                         tagline: cp.Product?.tagline,
@@ -1346,16 +1369,63 @@ export class OrderController {
                             : undefined,
                         quantity: cp.quantity,
                     }))
+
+                    // Calculate proper shipping using shipping service
+                    const orderWeight =
+                        this.shippingService.calculateOrderWeight(
+                            cartProducts.map((cp) => ({
+                                weight: cp.PriceList?.weight || '0g',
+                                quantity: cp.quantity,
+                            })),
+                        )
+                    const pincode = orderJSON.UserAddress?.pincode || ''
+                    const shippingMethod =
+                        orderJSON.shippingMethod || 'Home Delivery'
+                    let shippingDiscountObj = null
+                    if (orderCoupons?.length > 0) {
+                        shippingDiscountObj =
+                            orderCoupons[0].CouponCode.CouponDiscounts?.find(
+                                (d) => d.name === 'Shipping',
+                            )
+                    }
+                    shippingDetails = this.shippingService.getShippingDetails(
+                        pincode,
+                        orderWeight,
+                        shippingMethod,
+                        shippingDiscountObj,
+                    )
+
+                    subtotal = cartProducts.reduce(
+                        (sum, cartProduct) =>
+                            sum +
+                            cartProduct.quantity *
+                                cartProduct.PriceList.unitprice,
+                        0,
+                    )
+                } else {
+                    shippingDetails = {
+                        baseCost: 0,
+                        discount: 0,
+                        finalCost: 0,
+                        isFree: false,
+                        zone: 'N/A',
+                        weightCategory: 'N/A',
+                        message: 'No items',
+                    }
                 }
 
                 // Format order object
                 const address = orderJSON.UserAddress
                 const user = orderJSON.user
-                // Format order object
                 const couponCode =
-                    orderCoupons.length > 0
+                    orderCoupons?.length > 0
                         ? orderCoupons[0]?.CouponCode?.code
                         : undefined
+
+                // Use proper shipping cost
+                const finalShippingCost = shippingDetails.finalCost
+                const totalAmount = subtotal + finalShippingCost - totalDiscount
+
                 const orderObj = {
                     id: orderJSON.id,
                     name: address?.name,
@@ -1373,14 +1443,16 @@ export class OrderController {
                     status: orderJSON.status,
                     orderedDate: orderJSON.orderedDate,
                     expectedDeliveryDate: orderJSON.expectedDeliveryDate,
+                    totalAmount,
+                    shippingDetails,
                 }
 
                 return {
-                    cartId: cart?.id,
+                    cartId: orderJSON.Cart?.id,
                     order: orderObj,
                     products,
                     totalDiscount,
-                    shippingDiscount,
+                    shippingDetails,
                     couponCode,
                 }
             })

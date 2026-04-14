@@ -1,0 +1,7 @@
+{
+    "*.{ts,tsx,js,jsx,json,css,md}": [
+        "secretlint .",
+        "prettier --check --ignore-unknown",
+        "eslint --fix"
+    ]
+}

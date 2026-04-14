@@ -1,0 +1,1 @@
+# Dependencies\nnode_modules/\n\n# Build outputs\ndist/\nbuild/\n\n# Vite\n.cache/\n\n# Logs\n*.log\nnpm-debug.log*\n\n# Env files\n.env\n.env.local\n.env.development.local\n.env.test.local\n.env.production.local\n\n# IDE\n.vscode/\n.idea/\n\n# OS\n.DS_Store\nThumbs.db
