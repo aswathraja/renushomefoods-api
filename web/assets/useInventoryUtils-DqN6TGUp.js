@@ -1,0 +1,1 @@
+const t=({startDate:t,endDate:e,selectedCategoryIds:l,selectedItemIds:n,selectedLocationIds:o})=>({fromDate:t?t.toISOString().split("T")[0]:null,toDate:e?e.toISOString().split("T")[0]:null,categoryIds:l.length>0?l:null,itemIds:n.length>0?n:null,locationIds:o.length>0?o:null}),e=()=>localStorage.getItem("token");export{t as b,e as g};
