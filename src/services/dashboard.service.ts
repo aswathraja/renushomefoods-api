@@ -21,6 +21,7 @@ export class AdminDashboardPdfService {
     ): Promise<Buffer | Uint8Array> {
         const browser = await puppeteer.launch({
             headless: true,
+            executablePath: process.env.CHROME_PATH,
             args: ["--no-sandbox", "--disable-setuid-sandbox"],
         })
 
