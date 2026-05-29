@@ -5,7 +5,7 @@
 	"compilerOptions": {
 		"deleteOutDir": true,
 		"assets": [
-			{ "include": "/web/**/*", "outDir": "/dist/web" },
+			{ "include": "/web/**/*", "outDir": "dist/web" },
 			{ "include": "templates/**/*", "outDir": "dist" }
 		]
 	}
