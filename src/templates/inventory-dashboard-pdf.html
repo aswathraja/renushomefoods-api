@@ -200,7 +200,9 @@
 			<br />
 			<div class="chart-section">
 				<div class="chart-grid">
-					<div class="chart-row {{#if (or chartData.stockbycategory chartData.stockbyitems chartData.stockbylocation)}}has-no-data{{/if}}">
+					<div
+						class="chart-row {{#if (or chartData.stockbycategory chartData.stockbyitems chartData.stockbylocation)}}has-no-data{{/if}}"
+					>
 						<div class="chart-card">
 							<h3 class="pl-4 pt-3-5">Stock by Category</h3>
 							{{#if chartData.stockbycategory}}
