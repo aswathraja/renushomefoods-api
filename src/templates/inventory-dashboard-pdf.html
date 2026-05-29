@@ -1,0 +1,614 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<title>Inventory Dashboard Export</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				line-height: 1.6;
+				color: #333;
+			}
+			.container {
+				max-width: 1200px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			.header {
+				text-align: center;
+				margin-bottom: 30px;
+				border-bottom: 3px solid #3b82f6;
+				padding-bottom: 20px;
+			}
+			.kpi-grid {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				gap: 20px;
+				margin: 30px 0;
+			}
+			.kpi-card {
+				border: 1px solid #e5e7eb;
+				border-radius: 12px;
+				padding: 20px;
+				background: #f9fafb;
+			}
+			.kpi-value {
+				font-size: 2rem;
+				font-weight: bold;
+				color: #3b82f6;
+			}
+			.chart-section {
+				margin: 4px 0;
+			}
+			.chart-row {
+				display: flex;
+				flex-direction: row;
+				gap: 10px;
+			}
+
+			.full-width {
+				width: 100%;
+			}
+
+			.chart-card {
+				flex: 1;
+			}
+			.chart-card {
+				border: 1px solid #e5e7eb;
+				border-radius: 12px;
+				background: #fff;
+				flex: 1;
+			}
+			.chart-canvas {
+				display: block;
+				width: 100%;
+				height: auto;
+				max-height: 450px;
+				border-radius: 8px;
+			}
+			.has-no-data {
+				height: 30mm !important;
+			}
+			.footer {
+				margin-top: 10px;
+				text-align: center;
+				font-size: 0.875rem;
+				color: #6b7280;
+				border-top: 1px solid #e5e7eb;
+				padding-top: 10px;
+			}
+			.pl-4 {
+				padding-left: 16px;
+			}
+			.pt-3-5 {
+				padding-top: 14px;
+			}
+			@media print {
+				@page {
+					size: A4 landscape;
+					margin: 10mm;
+				}
+
+				html,
+				body {
+					height: 100%;
+				}
+
+				.container {
+					height: 100%;
+				}
+
+				.chart-grid {
+					page-break-inside: avoid;
+					break-inside: avoid;
+				}
+
+				.chart-row {
+					display: flex;
+					flex-direction: row;
+					gap: 10px;
+					height: calc(210mm - 30mm);
+					page-break-inside: avoid;
+					break-inside: avoid;
+					align-items: stretch;
+					margin-bottom: 10mm;
+				}
+				.has-no-data {
+					height: 30mm !important;
+				}
+				.chart-card {
+					flex: 1;
+					display: flex;
+					flex-direction: column;
+					height: 100%;
+					page-break-inside: avoid;
+					break-inside: avoid;
+					margin-bottom: 20px;
+				}
+
+				.chart-card canvas {
+					flex: 1;
+					height: 80% !important;
+				}
+
+				.chart-section:nth-of-type(2) {
+					page-break-before: always;
+					break-before: page;
+				}
+
+				.full-width {
+					width: 100%;
+					page-break-inside: avoid;
+					break-inside: avoid;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>Inventory Dashboard</h1>
+				<p id="date-range">{{#if dateRange}}{{dateRange}}{{else}}All Time{{/if}}</p>
+				<p>Generated: {{generatedAt}}</p>
+			</div>
+
+			<div class="summary">
+				<div class="kpi-grid">
+					<div class="kpi-card">
+						<div>Total Product Value</div>
+						<div class="kpi-value">₹{{kpis.totalProductValue}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Total Item Value</div>
+						<div class="kpi-value">₹{{kpis.totalItemValue}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Total Inventory</div>
+						<div class="kpi-value">{{kpis.totalInventory}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Total Products</div>
+						<div class="kpi-value">{{kpis.totalProducts}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Total Items</div>
+						<div class="kpi-value">{{kpis.totalItems}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Total Categories</div>
+						<div class="kpi-value">{{kpis.totalCategories}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Available Stock</div>
+						<div class="kpi-value">{{kpis.availableStock}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Pending Quantity</div>
+						<div class="kpi-value">{{kpis.pendingQuantity}}</div>
+					</div>
+					<div class="kpi-card">
+						<div>Fulfilled Quantity</div>
+						<div class="kpi-value">{{kpis.fulfilledQuantity}}</div>
+					</div>
+				</div>
+			</div>
+			<br />
+			<div class="chart-section">
+				<div class="chart-grid">
+					<div class="chart-row {{#if (or chartData.stockbycategory chartData.stockbyitems chartData.stockbylocation)}}has-no-data{{/if}}">
+						<div class="chart-card">
+							<h3 class="pl-4 pt-3-5">Stock by Category</h3>
+							{{#if chartData.stockbycategory}}
+							<canvas
+								id="stockbycategory-donut"
+								class="chart-canvas"
+								width="320"
+								height="400"
+							></canvas>
+							{{else}}
+							<p class="pl-4 pt-3-5">No data available</p>
+							{{/if}}
+						</div>
+						<div class="chart-card">
+							<h3 class="pl-4 pt-3-5">Stock by Location</h3>
+							{{#if chartData.stockbylocation}}
+							<canvas
+								id="stockbylocation-donut"
+								class="chart-canvas"
+								width="320"
+								height="400"
+							></canvas>
+							{{else}}
+							<p class="pl-4 pt-3-5">No data available</p>
+							{{/if}}
+						</div>
+						<div class="chart-card">
+							<h3 class="pl-4 pt-3-5">Stock by Items</h3>
+							{{#if chartData.stockbyitems}}
+							<canvas
+								id="stockbyitems-donut"
+								class="chart-canvas"
+								width="320"
+								height="400"
+							></canvas>
+							{{else}}
+							<p class="pl-4 pt-3-5">No data available</p>
+							{{/if}}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- New full-width bar chart section -->
+			<div class="chart-section">
+				<div class="chart-card full-width">
+					<h3 class="pl-4 pt-3-5">Stock by Top Items (Available / Pending / Fulfilled)</h3>
+					{{#if chartData.stockbytopitems}}
+					<canvas
+						id="stockbytopitems-bar"
+						class="chart-canvas full-width"
+						width="900"
+						height="400"
+					></canvas>
+					{{else}}
+					<p class="pl-4 pt-4">No data available</p>
+					{{/if}}
+				</div>
+			</div>
+
+			<div class="footer">
+				<p>© Renu's Home Foods. All rights reserved.</p>
+			</div>
+		</div>
+
+		<script>
+			            // Modern color palette for charts
+			            const modernChartColors = [
+			              '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
+			              '#ef4444', '#f97316', '#14b8a6', '#84cc16', '#a855f7',
+			              '#ec4899', '#6366f1', '#22c55e', '#0ea5e9', '#f97316'
+			            ];
+
+			            window.chartData = {{{json chartData}}};
+
+			function drawDonut(canvasId, labelKey, valueKey) {
+			    var canvas = document.getElementById(canvasId + '-donut');
+			    if (!canvas) return;
+
+			    var ctx = canvas.getContext('2d');
+			    var chartKey = canvasId
+			    var data = window.chartData && window.chartData[chartKey] ? window.chartData[chartKey] : [];
+			    var centerX = 180;
+			    var centerY = 120;
+			    var radius = 105;
+			    var lineWidth = 26;
+			    var canvasHeight = canvas.height;
+			    var chartBottom = centerY + radius;
+			    var legendTop = chartBottom + 20;
+			    var availableLegendHeight = canvas.height - (centerY + radius + 30);
+			    var itemHeight = Math.min(26, availableLegendHeight / 10);
+			    var legendLeft = 5;
+
+			    ctx.clearRect(0, 0, 360, 460);
+
+			    // Background circle
+			    ctx.beginPath();
+			    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+			    ctx.lineWidth = lineWidth;
+			    ctx.strokeStyle = '#f3f4f6';
+			    ctx.stroke();
+
+			    var total = 0;
+			    for (var i = 0; i < data.length; i++) {
+			        total += parseFloat(data[i][valueKey] || 0);
+			    }
+			    if (total === 0) {
+			        ctx.save();
+			        ctx.fillStyle = '#9ca3af';
+			        ctx.textAlign = 'center';
+			        ctx.textBaseline = 'middle';
+			        ctx.font = 'bold 20px sans-serif';
+			        ctx.fillText('No Data', centerX, centerY);
+			        ctx.restore();
+			        return;
+			    }
+
+			    // Draw slices (top 8)
+			    var currentAngle = -Math.PI / 2;
+			    for (var j = 0; j < Math.min(10, data.length); j++) {
+			        var value = parseFloat(data[j][valueKey] || 0);
+			        var sliceAngle = (value / total) * 2 * Math.PI;
+
+			        ctx.save();
+			        ctx.beginPath();
+			        ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+			        ctx.lineWidth = lineWidth;
+			        ctx.lineCap = 'round';
+			        ctx.strokeStyle = modernChartColors[j % modernChartColors.length];
+			        ctx.stroke();
+			        ctx.restore();
+
+			        currentAngle += sliceAngle;
+			    }
+
+			    // Center total
+			    ctx.save();
+			    ctx.fillStyle = '#3b82f6';
+			    ctx.textAlign = 'center';
+			    ctx.textBaseline = 'middle';
+			    ctx.font = 'bold 20px sans-serif';
+			    ctx.fillText(total.toLocaleString() + ' units', centerX, centerY);
+			    ctx.restore();
+
+			    // Legend (top 6)
+			    for (var k = 0; k < Math.min(10, data.length); k++) {
+			        var value = parseFloat(data[k][valueKey] || 0);
+			        var pct = ((value / total * 100)).toFixed(0) + '%';
+			        var color = modernChartColors[k % modernChartColors.length];
+			        var label = (data[k][labelKey] || 'Unknown').substring(0, 20);
+			        if (data[k][labelKey] && data[k][labelKey].length > 20) label += '...';
+
+			        // Color dot
+			        ctx.fillStyle = color;
+			        ctx.beginPath();
+			        ctx.arc(legendLeft + 15, legendTop + k * itemHeight + 11, 6, 0, 2 * Math.PI);
+			        ctx.fill();
+
+			        // Label
+			        ctx.fillStyle = '#374151';
+			        ctx.font = '14px sans-serif';
+			        ctx.textAlign = 'left';
+			        ctx.textBaseline = 'middle';
+			        ctx.fillText(label, legendLeft + 30, legendTop + k * itemHeight + 11);
+
+			        // Value + pct
+			        ctx.fillStyle = '#3b82f6';
+			        ctx.font = 'bold 14px sans-serif';
+			        ctx.textAlign = 'right';
+			        ctx.textBaseline = 'middle';
+			        ctx.fillText(value.toLocaleString() + ' (' + pct + ')', 310, legendTop + k * itemHeight + 11);
+			    }
+			}
+
+			document.addEventListener('DOMContentLoaded', drawCharts);
+			function drawCharts() {
+			    drawDonut('stockbycategory', 'categoryName', 'availableStock');
+			    drawDonut('stockbylocation', 'locationName', 'availableStock');
+			    drawDonut('stockbyitems', 'name', 'availableStock');
+			    // drawDonut('stockbytopitems', 'name', 'availableStock');
+			}
+
+			// Fallback timeout
+			setTimeout(drawCharts, 200);
+
+			            document.addEventListener('DOMContentLoaded', () => drawCharts());
+			            function drawCharts() {
+			                drawDonut('stockbycategory', 'categoryName', 'availableStock');
+			                drawDonut('stockbylocation', 'locationName', 'availableStock');
+			                drawDonut('stockbyitems', 'name', 'availableStock');
+			                // drawDonut('stockbytopitems', 'name', 'availableStock');
+			            }
+
+			            // Fallback timeout
+			            setTimeout(drawCharts, 200);
+		</script>
+
+		<script>
+			function drawStockByTopItemsBar(canvasId) {
+				var canvas = document.getElementById(canvasId + '-bar');
+				if (!canvas) return;
+
+				var ctx = canvas.getContext('2d');
+				var data =
+					window.chartData && window.chartData.stockbytopitems
+						? window.chartData.stockbytopitems
+						: [];
+
+				if (data.length === 0) {
+					ctx.save();
+					ctx.fillStyle = '#9ca3af';
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.font = 'bold 24px sans-serif';
+					ctx.fillText('No Data', canvas.width / 2, canvas.height / 2);
+					ctx.restore();
+					return;
+				}
+
+				// Parse data and compute max
+				var items = [];
+				var maxValue = 0;
+				for (var i = 0; i < Math.min(14, data.length); i++) {
+					var item = data[i];
+					var available = parseInt(item.availableStock || '0');
+					var pending = parseInt(item.pendingQuantity || '0');
+					var fulfilled = parseInt(item.fulfilledQuantity || '0');
+					var total = available + pending + fulfilled;
+					maxValue = Math.max(maxValue, total);
+					items.push({
+						name: item.name || 'Unknown',
+						available: available,
+						pending: pending,
+						fulfilled: fulfilled,
+						total: total,
+					});
+				}
+
+				if (maxValue === 0) {
+					ctx.save();
+					ctx.fillStyle = '#9ca3af';
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.font = 'bold 24px sans-serif';
+					ctx.fillText('No Stock Data', canvas.width / 2, canvas.height / 2);
+					ctx.restore();
+					return;
+				}
+
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				// Colors
+				var availableColor = '#10b981'; // green
+				var pendingColor = '#f59e0b'; // orange
+				var fulfilledColor = '#ef4444'; // red
+
+				var barAreaWidth = 650;
+				var barHeight = 28;
+				var startY = 70;
+				var itemStartX = 20;
+				var barStartX = 200;
+				var legendHeight = 50;
+
+				// Background grid
+				ctx.strokeStyle = '#f3f4f6';
+				ctx.lineWidth = 1;
+				for (var gx = barStartX; gx < barStartX + barAreaWidth; gx += 100) {
+					ctx.beginPath();
+					ctx.moveTo(gx, startY);
+					ctx.lineTo(gx, startY + items.length * (barHeight + 5));
+					ctx.stroke();
+				}
+
+				// Legend
+				var legendY = 15;
+				var legendItems = [
+					{
+						color: availableColor,
+						label: 'Available',
+						valueKey: 'available',
+					},
+					{
+						color: pendingColor,
+						label: 'Pending',
+						valueKey: 'pending',
+					},
+					{
+						color: fulfilledColor,
+						label: 'Fulfilled',
+						valueKey: 'fulfilled',
+					},
+				];
+				for (var l = 0; l < legendItems.length; l++) {
+					var leg = legendItems[l];
+					// Color box
+					ctx.fillStyle = leg.color;
+					ctx.fillRect(barStartX + l * 220, legendY, 20, 20);
+					// Label
+					ctx.fillStyle = '#374151';
+					ctx.font = 'bold 14px sans-serif';
+					ctx.textAlign = 'left';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(leg.label, barStartX + l * 220 + 25, legendY + 10);
+				}
+
+				// Bars and labels
+				for (var b = 0; b < items.length; b++) {
+					var item = items[b];
+					var y = startY + b * (barHeight + 5);
+					var barScale = barAreaWidth / maxValue;
+
+					// Product name (truncate)
+					var displayName = item.name.length > 25 ? item.name.substring(0, 22) + '...' : item.name;
+					ctx.fillStyle = '#374151';
+					ctx.font = '14px sans-serif';
+					ctx.textAlign = 'left';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(b + 1 + '. ' + displayName, itemStartX, y + barHeight / 2);
+
+					// Available bar
+					if (item.available > 0) {
+						var availWidth = item.available * barScale;
+						ctx.fillStyle = availableColor;
+						ctx.fillRect(barStartX, y, availWidth, barHeight);
+						// Value label
+						ctx.fillStyle = '#fff';
+						ctx.font = 'bold 12px sans-serif';
+						ctx.textAlign = 'center';
+						ctx.textBaseline = 'middle';
+						ctx.fillText(
+							item.available.toLocaleString(),
+							barStartX + availWidth / 2,
+							y + barHeight / 2,
+						);
+					}
+
+					// Pending bar
+					if (item.pending > 0) {
+						var pendStart = item.available * barScale;
+						var pendWidth = item.pending * barScale;
+						ctx.fillStyle = pendingColor;
+						ctx.fillRect(barStartX + pendStart, y, pendWidth, barHeight);
+						// Value label
+						ctx.fillStyle = '#000';
+						ctx.font = 'bold 12px sans-serif';
+						ctx.textAlign = 'center';
+						ctx.textBaseline = 'middle';
+						if (pendWidth > 30) {
+							ctx.fillStyle = '#fff';
+						}
+						ctx.fillText(
+							item.pending.toLocaleString(),
+							barStartX + pendStart + pendWidth / 2,
+							y + barHeight / 2,
+						);
+					}
+
+					// Fulfilled bar
+					if (item.fulfilled > 0) {
+						var fulStart = (item.available + item.pending) * barScale;
+						var fulWidth = item.fulfilled * barScale;
+						ctx.fillStyle = fulfilledColor;
+						ctx.fillRect(barStartX + fulStart, y, fulWidth, barHeight);
+						// Value label
+						ctx.fillStyle = '#fff';
+						ctx.font = 'bold 12px sans-serif';
+						ctx.textAlign = 'center';
+						ctx.textBaseline = 'middle';
+						ctx.fillText(
+							item.fulfilled.toLocaleString(),
+							barStartX + fulStart + fulWidth / 2,
+							y + barHeight / 2,
+						);
+					}
+
+					// Total value at end
+					ctx.fillStyle = '#3b82f6';
+					ctx.font = 'bold 14px sans-serif';
+					ctx.textAlign = 'right';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(
+						item.total.toLocaleString(),
+						barStartX + barAreaWidth + 20,
+						y + barHeight / 2,
+					);
+				}
+
+				// Max scale label
+				ctx.fillStyle = '#6b7280';
+				ctx.font = '12px sans-serif';
+				ctx.textAlign = 'right';
+				ctx.textBaseline = 'middle';
+				ctx.fillText('Max: ' + maxValue.toLocaleString(), barStartX + barAreaWidth, startY - 10);
+			}
+		</script>
+
+		<script>
+			function drawCharts() {
+				drawDonut('stockbycategory', 'categoryName', 'availableStock');
+				drawDonut('stockbylocation', 'locationName', 'availableStock');
+				drawDonut('stockbyitems', 'name', 'availableStock');
+				drawStockByTopItemsBar('stockbytopitems');
+			}
+
+			document.addEventListener('DOMContentLoaded', drawCharts);
+
+			// Fallback timeout
+			setTimeout(drawCharts, 200);
+		</script>
+	</body>
+</html>

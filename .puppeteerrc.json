@@ -1,6 +1,6 @@
 {
-    "chrome": {
-        "skipDownload": true
-    },
-    "cacheDirectory": "${projectDirectory}/.cache"
+	"chrome": {
+		"skipDownload": true
+	},
+	"cacheDirectory": "${projectDirectory}/.cache"
 }
