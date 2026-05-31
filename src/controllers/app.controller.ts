@@ -113,4 +113,58 @@ export class AppController {
 			};
 		}
 	}
+
+	@Get('conversation')
+	verifyWABA(@Query() query: any): any {
+		try {
+			const hubMode = query?.['hub.mode'];
+			const hubChallenge = query?.['hub.challenge'];
+			const hubVerifyToken = query?.['hub.verify_token'];
+
+			logger.info('WhatsApp webhook verification attempt', {
+				hubMode,
+				hubVerifyToken,
+				hubChallenge,
+				query,
+			});
+			if (hubChallenge === 'renushomefoods@1234321') {
+				return hubChallenge;
+			} else {
+				throw new Error('Failed verification');
+			}
+		} catch (error) {
+			const cleanMessage = `Error in conversation: ${
+				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'
+			}`;
+			const err = new Error(cleanMessage);
+			err.stack = error.stack; // keep original stack
+
+			logger.error(err); // Winston now logs message + stack
+			return {
+				error: encryptPayload({ error: 'Failed to verify conversation webhook.' }),
+			};
+		}
+	}
+
+	@Post('conversation')
+	answerMessage(@Body() body: any): any {
+		try {
+			logger.info('WhatsApp webhook verification attempt', {
+				body,
+			});
+
+			return 'Thanks for the message';
+		} catch (error) {
+			const cleanMessage = `Error in conversation: ${
+				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'
+			}`;
+			const err = new Error(cleanMessage);
+			err.stack = error.stack; // keep original stack
+
+			logger.error(err); // Winston now logs message + stack
+			return {
+				error: encryptPayload({ error: 'Failed to verify conversation webhook.' }),
+			};
+		}
+	}
 }

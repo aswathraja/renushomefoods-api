@@ -1,0 +1,1 @@
+import{j as r}from"./vendor-react-core-C2xWMaqG.js";import{N as s}from"./NavBar-D4qausBi.js";import{T as o}from"./TopBar-DUHdx-AS.js";const a=()=>r.jsxs(r.Fragment,{children:[r.jsx(o,{}),r.jsx(s,{})]});export{a as T};
