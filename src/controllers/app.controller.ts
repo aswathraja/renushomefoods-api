@@ -121,13 +121,11 @@ export class AppController {
 			const hubChallenge = query?.['hub.challenge'];
 			const hubVerifyToken = query?.['hub.verify_token'];
 
-			logger.info('WhatsApp webhook verification attempt', {
-				hubMode,
-				hubVerifyToken,
-				hubChallenge,
-				query,
-			});
-			if (hubChallenge === 'renushomefoods@1234321') {
+			logger.info('WhatsApp webhook verification attempt');
+			logger.info(JSON.stringify(query));
+			logger.info(hubVerifyToken);
+			logger.info(hubVerifyToken === 'renushomefoods@1234321');
+			if (hubVerifyToken === 'renushomefoods@1234321') {
 				return hubChallenge;
 			} else {
 				throw new Error('Failed verification');
@@ -149,9 +147,8 @@ export class AppController {
 	@Post('conversation')
 	answerMessage(@Body() body: any): any {
 		try {
-			logger.info('WhatsApp webhook verification attempt', {
-				body,
-			});
+			logger.info('WhatsApp webhook message');
+			logger.info(JSON.stringify(body));
 
 			return 'Thanks for the message';
 		} catch (error) {
