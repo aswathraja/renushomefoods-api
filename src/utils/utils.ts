@@ -16,6 +16,19 @@ const adsPath = process.env.STATIC_PATH;
 const inventoryPath = process.env.INVENTORY_PATH;
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 
+/**
+ * Normalizes phone numbers for consistent DB lookups and AI input.
+ * Handles formats:
+ *   - +91 9500808653  → 9500808653
+ *   - 919500808653    → 9500808653
+ *   - +1 2345678901   → 2345678901
+ *   - 9500808653      → 9500808653
+ */
+export const normalizePhone = (num: string): string => {
+	if (!num) {return num;}
+	return num.replace(/^\+\d{1,3}|\s+/g, '');
+};
+
 // Encrypt payload
 export function encryptPayload(payload: any): string {
 	const data = JSON.stringify(payload);
@@ -81,13 +94,11 @@ const isVideo = (mimeType: string): boolean => {
 };
 
 // Helper to convert image to WebP using sharp
-const convertImageToWebp = async (buffer: Buffer, quality: number = 95): Promise<Buffer> => {
-	const convertedBuffer = await sharp(buffer).webp({ quality }).toBuffer();
-	return convertedBuffer;
-};
+const convertImageToWebp = (buffer: Buffer, quality: number = 95): Promise<Buffer> =>
+	sharp(buffer).webp({ quality }).toBuffer();
 
 // Helper to convert video to MP4 using FFmpeg CLI
-const convertVideoToMp4 = async (inputBuffer: Buffer, outputPath: string): Promise<void> =>
+const convertVideoToMp4 = (inputBuffer: Buffer, outputPath: string): Promise<void> =>
 	new Promise((resolve, reject) => {
 		// Create a temporary input file
 		const tempInputPath = `${outputPath}.temp${Date.now()}`;
@@ -293,4 +304,171 @@ export const sanitizeStringToNumber = (value: string | null | undefined): number
 	const cleaned = value?.replace(/₹|\s/g, '');
 	const num = parseFloat(cleaned ?? '0');
 	return isNaN(num) ? 0 : num;
+};
+
+export type WAMessageExtracted = {
+	name: string;
+	whatsappNumber: string;
+	timestamp: string;
+	type: string;
+	message: string;
+	rawMessageId?: string | null;
+	fromUserId?: string;
+};
+
+// Extracts WABA message records from the webhook payload.
+export const extractWAMessageFromWebhook = (body: any): WAMessageExtracted[] => {
+	const results: WAMessageExtracted[] = [];
+
+	const entries = body?.entry;
+
+	if (!Array.isArray(entries)) {
+		return results;
+	}
+
+	for (const entry of entries) {
+		const changes = entry?.changes;
+		if (!Array.isArray(changes)) {
+			continue;
+		}
+
+		for (const change of changes) {
+			const value = change?.value;
+			const messages = value?.messages;
+			if (!Array.isArray(messages)) {
+				continue;
+			}
+
+			for (const msg of messages) {
+				const contact = value?.contacts?.[0];
+				const name = contact?.profile?.name ?? '';
+				const whatsappNumber = msg?.from ?? '';
+				const timestamp =
+					msg?.timestamp === null || msg?.timestamp === undefined ? '' : String(msg.timestamp);
+
+				const type = msg?.type ?? '';
+
+				let bodyText = '';
+				if (type === 'text') {
+					bodyText = msg?.text?.body ?? '';
+				}
+
+				results.push({
+					name,
+					whatsappNumber,
+					timestamp,
+					type,
+					message: bodyText,
+					rawMessageId: msg?.id ?? null,
+					fromUserId: contact?.user_id,
+				});
+			}
+		}
+	}
+
+	return results;
+};
+
+// Helper to get TEMP_PATH from environment
+const {TEMP_PATH} = process.env;
+
+// Helper to save uploaded file to temp directory
+export const saveFileToTemp = async (
+	file: Express.Multer.File,
+	prefix: string = 'file',
+): Promise<{ path: string; filename: string; url: string }> => {
+	if (!file) {
+		return null;
+	}
+
+	// Resolve the actual path
+	const basePath = TEMP_PATH
+		? resolve(path.join(__dirname, '..', '..', TEMP_PATH))
+		: resolve(path.join(__dirname, '..', '..', 'public', 'temp'));
+
+	// Ensure temp directory exists
+	if (!existsSync(basePath)) {
+		mkdirSync(basePath, { recursive: true });
+	}
+
+	// Generate unique filename with timestamp and random string
+	const timestamp = Date.now();
+	const randomStr = Math.random().toString(36).substring(2, 8);
+	const originalExt = path.extname(file.originalname);
+	const filename = `${prefix}-${timestamp}-${randomStr}${originalExt}`;
+	const filePath = path.join(basePath, filename);
+
+	// Save the file
+	writeFileSync(filePath, file.buffer);
+
+	// Return the relative path, filename, and public URL
+	return {
+		path: filePath,
+		filename,
+		url: `/temp/${filename}`,
+	};
+};
+
+// Helper to save buffer to temp directory
+export const saveBufferToTemp = async (
+	buffer: Buffer,
+	filename: string,
+	mimeType: string,
+): Promise<{ path: string; filename: string; url: string }> => {
+	if (!buffer) {
+		return null;
+	}
+
+	// Resolve the actual path
+	const basePath = TEMP_PATH
+		? resolve(path.join(__dirname, '..', '..', TEMP_PATH))
+		: resolve(path.join(__dirname, '..', '..', 'public', 'temp'));
+
+	// Ensure temp directory exists
+	if (!existsSync(basePath)) {
+		mkdirSync(basePath, { recursive: true });
+	}
+
+	const filePath = path.join(basePath, filename);
+
+	// Save the file
+	writeFileSync(filePath, buffer);
+
+	// Return the relative path, filename, and public URL
+	return {
+		path: filePath,
+		filename,
+		url: `/temp/${filename}`,
+	};
+};
+
+// Helper to delete temp file
+export const deleteTempFile = (filename: string): void => {
+	if (!filename) {
+		return;
+	}
+
+	const basePath = TEMP_PATH
+		? resolve(path.join(__dirname, '..', '..', TEMP_PATH))
+		: resolve(path.join(__dirname, '..', '..', 'public', 'temp'));
+
+	const filePath = path.join(basePath, filename);
+
+	if (existsSync(filePath)) {
+		try {
+			unlinkSync(filePath);
+		} catch (err: any) {
+			logger.error(new Error(`Failed to delete temp file ${filename}: ${err.message}`));
+		}
+	}
+};
+
+// Helper to validate sticker file types
+export const isValidStickerType = (mimeType: string): boolean => {
+	const allowedStickerTypes = [
+		'image/webp',
+		'image/png',
+		'image/jpeg',
+	];
+	return allowedStickerTypes.includes(mimeType);
 };

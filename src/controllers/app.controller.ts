@@ -2,13 +2,18 @@ import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import { join } from 'path';
 import { sequelize } from '../database/database';
 import { logger } from '../logger/logger';
-import { Message } from '../models/models';
+import { Message, WAMessage } from '../models/models';
+
+import { AIActionClassifierService } from '../services/ai/ai-action-classifier.service';
 import { AppService } from '../services/app.service';
-import { decryptPayload, encryptPayload } from '../utils/utils';
+import { decryptPayload, encryptPayload, extractWAMessageFromWebhook } from '../utils/utils';
 
 @Controller()
 export class AppController {
-	constructor(private readonly appService: AppService) {}
+	constructor(
+		private readonly appService: AppService,
+		private readonly aiActionClassifierService: AIActionClassifierService,
+	) {}
 
 	@Get()
 	getHello(@Body() body: any, @Query() query: any, @Res() res): any {
@@ -117,14 +122,14 @@ export class AppController {
 	@Get('conversation')
 	verifyWABA(@Query() query: any): any {
 		try {
-			const hubMode = query?.['hub.mode'];
+			const _hubMode = query?.['hub.mode'];
 			const hubChallenge = query?.['hub.challenge'];
+
 			const hubVerifyToken = query?.['hub.verify_token'];
 
 			logger.info('WhatsApp webhook verification attempt');
 			logger.info(JSON.stringify(query));
 			logger.info(hubVerifyToken);
-			logger.info(hubVerifyToken === 'renushomefoods@1234321');
 			if (hubVerifyToken === 'renushomefoods@1234321') {
 				return hubChallenge;
 			} else {
@@ -145,10 +150,29 @@ export class AppController {
 	}
 
 	@Post('conversation')
-	answerMessage(@Body() body: any): any {
+	async answerMessage(@Body() body: any): Promise<any> {
 		try {
-			logger.info('WhatsApp webhook message');
-			logger.info(JSON.stringify(body));
+			const waMessages = extractWAMessageFromWebhook(body);
+			for (const waMessage of waMessages) {
+				logger.info(
+					`WA message: name=${waMessage.name}, whatsappNumber=${waMessage.whatsappNumber}, timestamp=${waMessage.timestamp}, type=${waMessage.type}, message=${waMessage.message}`,
+				);
+				const created = await WAMessage.create({
+					name: waMessage.name,
+					whatsappNumber: waMessage.whatsappNumber,
+					timestamp: waMessage.timestamp,
+					type: waMessage.type,
+					message: waMessage.message,
+					rawMessageId: waMessage.rawMessageId ?? null,
+					fromUserId: waMessage.fromUserId,
+				});
+
+				// Background job placeholder: do not block webhook response.
+				// When you add a real queue (BullMQ/Agenda), replace this.
+				setImmediate(() => {
+					void this.aiActionClassifierService.classifyAndLogIfNeeded(created);
+				});
+			}
 
 			return 'Thanks for the message';
 		} catch (error) {

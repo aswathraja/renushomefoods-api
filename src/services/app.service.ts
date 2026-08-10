@@ -400,8 +400,6 @@ export class AppService {
 
 			// Close the browser
 			await browser.close();
-
-			logger.info(`✅ PDF generated for order ${orderId}`);
 			return Buffer.from(pdfBuffer);
 		} catch (error) {
 			const cleanMessage = `Error in generateOrderInvoicePDF: ${
@@ -503,8 +501,6 @@ export class AppService {
 			});
 
 			await browser.close();
-
-			logger.info(`✅ Shipping label PDF generated for order ${orderId}`);
 			return Buffer.from(pdfBuffer);
 		} catch (error) {
 			logger.error(`Error generating shipping label PDF: ${error.message}`);

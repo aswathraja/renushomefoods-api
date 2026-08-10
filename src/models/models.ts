@@ -253,6 +253,209 @@ Message.init(
 	},
 );
 
+/** WhatsApp Message Model */
+export class WAMessage extends Model {}
+
+WAMessage.init(
+	{
+		id: {
+			type: DataTypes.INTEGER.UNSIGNED,
+			autoIncrement: true,
+			primaryKey: true,
+		},
+		name: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		whatsappNumber: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		timestamp: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		type: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		message: {
+			type: DataTypes.TEXT,
+			allowNull: false,
+		},
+		rawMessageId: {
+				type: DataTypes.STRING,
+				allowNull: true,
+				defaultValue: null,
+		},
+		fromUserId: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+		action: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+	},
+	{
+		sequelize,
+		tableName: 'wamessages',
+		timestamps: true,
+		indexes: [
+			{
+				unique: false,
+				fields: ['whatsappNumber', 'timestamp', 'rawMessageId'],
+			},
+			{
+				unique: false,
+				fields: ['whatsappNumber', 'action'],
+				name: 'idx_wamessages_wa_action',
+			},
+		],
+	},
+);
+
+/**
+ * AI classification errors for inbound WA messages.
+ * Table name must be: ai_action_errors
+ */
+export class WAMessageAiActionError extends Model {}
+
+WAMessageAiActionError.init(
+	{
+		id: {
+			type: DataTypes.INTEGER.UNSIGNED,
+			autoIncrement: true,
+			primaryKey: true,
+		},
+		wamessageId: {
+			type: DataTypes.INTEGER.UNSIGNED,
+			allowNull: false,
+			references: {
+				model: WAMessage,
+				key: 'id',
+			},
+			onDelete: 'CASCADE',
+		},
+		action: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		confidence: {
+			type: DataTypes.FLOAT,
+			allowNull: false,
+			defaultValue: 0,
+		},
+		reason: {
+			type: DataTypes.TEXT,
+			allowNull: false,
+		},
+		rawMessage: {
+			type: DataTypes.TEXT,
+			allowNull: false,
+		},
+		extracted: {
+			// store AI extraction JSON
+			type: DataTypes.JSON,
+			allowNull: false,
+			defaultValue: {},
+		},
+		errorType: {
+			type: DataTypes.STRING,
+			allowNull: false,
+			defaultValue: 'LOW_CONFIDENCE',
+		},
+	},
+	{
+		sequelize,
+		tableName: 'ai_action_errors',
+		timestamps: true,
+		indexes: [
+			{
+				unique: false,
+				fields: ['wamessageId'],
+			},
+		],
+	},
+);
+
+// Relations
+WAMessage.hasMany(WAMessageAiActionError, { foreignKey: 'wamessageId', as: 'aiActionErrors' });
+WAMessageAiActionError.belongsTo(WAMessage, { foreignKey: 'wamessageId', as: 'wamessage' });
+
+/**
+ * Tracks in-progress orders during multi-step PLACE_ORDER flow.
+ * Created when user expresses order intent, updated as they provide products/address.
+ * Deleted once order is confirmed or cancelled.
+ */
+export class PendingOrder extends Model {}
+PendingOrder.init(
+	{
+		id: {
+			type: DataTypes.INTEGER.UNSIGNED,
+			autoIncrement: true,
+			primaryKey: true,
+		},
+		phone: {
+			type: DataTypes.STRING,
+			allowNull: false,
+		},
+		products: {
+			type: DataTypes.JSON,
+			allowNull: true,
+			defaultValue: [],
+		},
+		address: {
+			type: DataTypes.TEXT,
+			allowNull: true,
+			defaultValue: null,
+		},
+		deliveryName: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+		city: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+		state: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+		country: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+		pincode: {
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
+		},
+		confirmed: {
+			type: DataTypes.BOOLEAN,
+			allowNull: true,
+			defaultValue: false,
+		},
+	},
+	{
+		sequelize,
+		tableName: 'pending_orders',
+		timestamps: true,
+		indexes: [
+			{
+				unique: false,
+				fields: ['phone'],
+			},
+		],
+	},
+);
+
 export class Category extends Model {}
 
 Category.init(

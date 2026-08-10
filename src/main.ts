@@ -3,7 +3,7 @@ import compression from 'compression';
 import * as dotenv from 'dotenv';
 import * as express from 'express';
 import * as path from 'path';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { AppModule } from './app.module';
 dotenv.config({ quiet: true });
 async function bootstrap() {
@@ -22,6 +22,10 @@ async function bootstrap() {
 	// Serve static assets
 	const staticPath = process.env.STATIC_PATH || path.join(__dirname, '../public');
 	app.use('/static', express.static(staticPath));
+
+	// Serve temp files for WhatsApp media (public access without /api prefix)
+	const tempPath = process.env.TEMP_PATH || path.join(__dirname, '../public/temp');
+	app.use('/temp', express.static(resolve(tempPath)));
 
 	// Serve React static files
 	app.use(express.static(join(__dirname, '..', 'web')));

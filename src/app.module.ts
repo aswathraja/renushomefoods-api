@@ -5,6 +5,7 @@ import { InventoryController } from './controllers/inventory.controller';
 import { OrderController } from './controllers/order.controller';
 import { UserController } from './controllers/user.controller';
 import { connectToDatabase } from './database/db';
+import { AIModule } from './services/ai/ai.module';
 import { AppService } from './services/app.service';
 import { AdminDashboardPdfService } from './services/dashboard.service';
 import { ShippingService } from './services/shipping.service';
@@ -16,6 +17,7 @@ import { ShippingService } from './services/shipping.service';
 		//   // serveRoot: '/', // Serve at the root
 		//   exclude: ['/api*'], // Exclude API routes
 		// }),
+		AIModule,
 	],
 	controllers: [
 		AppController,

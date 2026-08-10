@@ -437,10 +437,6 @@ export class UserController {
 				const { supress } = response;
 				if (!supress) {
 					logger.error(err);
-				} else {
-					logger.info(
-						`Validated User with Email :  ${decryptedBody.email} , Phone: ${decryptedBody.phone} , Username: ${decryptedBody.username}`,
-					);
 				}
 				// use supress here
 			}
