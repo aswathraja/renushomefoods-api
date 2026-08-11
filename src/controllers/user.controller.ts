@@ -12,15 +12,84 @@ import * as jwt from 'jsonwebtoken';
 import { Op, Sequelize, UniqueConstraintError } from 'sequelize';
 import { sequelize } from '../database/db';
 import { logger } from '../logger/logger';
-import { Order, Role, User, UserAddress, UserRole, UserSession } from '../models/models';
+import { Order, Role, User, UserAddress, UserRole, UserSession, WAMessage } from '../models/models';
 import { AppService } from '../services/app.service';
-import { comparePassword, decryptPayload, encryptPayload, hashPassword } from '../utils/utils';
+import { WhatsAppService } from '../services/whatsapp/whatsapp.service';
+import {
+	comparePassword,
+	decryptPayload,
+	encryptPayload,
+	hashPassword,
+	normalizePhone,
+} from '../utils/utils';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
 @Controller('user')
 export class UserController {
-	constructor(private readonly appService: AppService) {}
+	constructor(
+		private readonly appService: AppService,
+		private readonly whatsAppService: WhatsAppService,
+	) {}
+
+	private buildUserPhoneWhereClause(phone: string) {
+		const normalizedPhone = normalizePhone(phone).slice(-10);
+		return sequelize.where(
+			sequelize.fn(
+				'RIGHT',
+				sequelize.fn(
+					'REPLACE',
+					sequelize.fn(
+						'REPLACE',
+						sequelize.fn(
+							'REPLACE',
+							sequelize.fn(
+								'REPLACE',
+								sequelize.fn('REPLACE', sequelize.col('phone'), '+', ''),
+								' ',
+								'',
+							),
+							'-',
+							'',
+						),
+						'(',
+						'',
+					),
+					')',
+					'',
+				),
+				10,
+			),
+			normalizedPhone,
+		);
+	}
+
+	private async createLoginResponse(user: any) {
+		const token = jwt.sign({ id: user.toJSON().id, username: user.toJSON().username }, JWT_SECRET, {
+			expiresIn: '1d',
+		});
+
+		await UserSession.create({
+			userId: user.toJSON().id,
+			token,
+			prevToken: token,
+		});
+
+		return {
+			response: encryptPayload({
+				token,
+				user: {
+					id: user.toJSON().id,
+					username: user.toJSON().username,
+					name: user.toJSON().name,
+					email: user.toJSON().email,
+					phone: user.toJSON().phone,
+				},
+				roles: user.toJSON().roles,
+				isAdmin: user.toJSON().roles.some((role) => /^Admin$/m.test(role.name)),
+			}),
+		};
+	}
 
 	@Post('validate-user')
 	async validateUser(@Body() body: { request: string }) {
@@ -957,32 +1026,7 @@ export class UserController {
 					HttpStatus.FORBIDDEN,
 				);
 			}
-			const token = jwt.sign(
-				{ id: user.toJSON().id, username: user.toJSON().username },
-				JWT_SECRET,
-				{ expiresIn: '1d' },
-			); // Save user session
-			await UserSession.create({
-				userId: user.toJSON().id,
-				token,
-				prevToken: token,
-				// expiry will auto-default to 1 day later via the model definition
-			});
-			const encryptedResponse = {
-				response: encryptPayload({
-					token,
-					user: {
-						id: user.toJSON().id,
-						username: user.toJSON().username,
-						name: user.toJSON().name,
-						email: user.toJSON().email,
-						phone: user.toJSON().phone,
-					},
-					roles: user.toJSON().roles,
-					isAdmin: user.toJSON().roles.some((role) => /^Admin$/m.test(role.name)),
-				}),
-			};
-			return encryptedResponse;
+			return this.createLoginResponse(user);
 		} catch (error) {
 			const cleanMessage = `Error in login: ${
 				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'
@@ -999,6 +1043,86 @@ export class UserController {
 					error: encryptPayload({
 						error: `Failed to login. ${error?.message}`,
 					}),
+				},
+				HttpStatus.INTERNAL_SERVER_ERROR,
+			);
+		}
+	}
+
+	@Post('whatsapp-login')
+	async whatsappLogin(@Body() body: { request: string }) {
+		try {
+			const decryptedBody = decryptPayload(body.request);
+			const name = String(decryptedBody.name ?? '').trim();
+			const phone = String(decryptedBody.phone ?? decryptedBody.whatsappNumber ?? '').trim();
+
+			if (!name || !phone) {
+				throw new HttpException(
+					{ error: encryptPayload({ error: 'Name and phone are required.' }) },
+					HttpStatus.BAD_REQUEST,
+				);
+			}
+
+			const user = await User.findOne({
+				where: {
+					[Op.and]: [
+						this.buildUserPhoneWhereClause(phone),
+						Sequelize.where(
+							Sequelize.fn('LOWER', Sequelize.fn('TRIM', Sequelize.col('name'))),
+							name.toLowerCase(),
+						),
+					],
+				},
+				include: [
+					{
+						model: Role,
+						as: 'roles',
+						attributes: { exclude: ['id'] },
+						through: { attributes: [] },
+					},
+				],
+			});
+
+			if (!user) {
+				const normalizedPhone = normalizePhone(phone).slice(-10);
+				const greeting = 'What do you want to do today?';
+				const whatsappResponse = await this.whatsAppService.sendText({
+					phone: normalizedPhone,
+					text: greeting,
+				});
+				// Persist the greeting with the rest of the conversation so it remains
+				// visible after browser refreshes and later login attempts.
+				await WAMessage.create({
+					name: 'bot',
+					whatsappNumber: `91${normalizedPhone}`,
+					timestamp: String(Date.now()),
+					type: 'outbound',
+					message: greeting,
+					rawMessageId: whatsappResponse?.messages?.[0]?.id ?? null,
+					action: 'OUTBOUND',
+				});
+
+				return {
+					response: encryptPayload({ success: true }),
+				};
+			}
+
+			return this.createLoginResponse(user);
+		} catch (error) {
+			const cleanMessage = `Error in whatsappLogin: ${
+				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'
+			}`;
+			const err = new Error(cleanMessage);
+			err.stack = error.stack;
+
+			logger.error(err);
+			if (error instanceof HttpException) {
+				throw error;
+			}
+
+			throw new HttpException(
+				{
+					error: encryptPayload({ error: `Failed to login with WhatsApp. ${error?.message}` }),
 				},
 				HttpStatus.INTERNAL_SERVER_ERROR,
 			);

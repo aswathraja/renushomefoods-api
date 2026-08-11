@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
+import { Op, WhereOptions } from 'sequelize';
 import { join } from 'path';
 import { sequelize } from '../database/database';
 import { logger } from '../logger/logger';
@@ -6,7 +7,12 @@ import { Message, WAMessage } from '../models/models';
 
 import { AIActionClassifierService } from '../services/ai/ai-action-classifier.service';
 import { AppService } from '../services/app.service';
-import { decryptPayload, encryptPayload, extractWAMessageFromWebhook } from '../utils/utils';
+import {
+	decryptPayload,
+	encryptPayload,
+	extractWAMessageFromWebhook,
+	normalizePhone,
+} from '../utils/utils';
 
 @Controller()
 export class AppController {
@@ -14,6 +20,46 @@ export class AppController {
 		private readonly appService: AppService,
 		private readonly aiActionClassifierService: AIActionClassifierService,
 	) {}
+
+	private buildWhatsappPhoneWhereClause(phone: string): WhereOptions {
+		const normalizedPhone = normalizePhone(phone).slice(-10);
+		return normalizedPhone
+			? {
+					[Op.or]: [
+						{ whatsappNumber: normalizedPhone },
+						{ whatsappNumber: `91${normalizedPhone}` },
+						sequelize.where(
+							sequelize.fn(
+								'RIGHT',
+								sequelize.fn(
+									'REPLACE',
+									sequelize.fn(
+										'REPLACE',
+										sequelize.fn(
+											'REPLACE',
+											sequelize.fn(
+												'REPLACE',
+												sequelize.fn('REPLACE', sequelize.col('whatsappNumber'), '+', ''),
+												' ',
+												'',
+											),
+											'-',
+											'',
+										),
+										'(',
+										'',
+									),
+									')',
+									'',
+								),
+								10,
+							),
+							normalizedPhone,
+						),
+					],
+				}
+			: { whatsappNumber: phone };
+	}
 
 	@Get()
 	getHello(@Body() body: any, @Query() query: any, @Res() res): any {
@@ -167,6 +213,13 @@ export class AppController {
 					fromUserId: waMessage.fromUserId,
 				});
 
+				// An explicit /end is stored as the durable session boundary, but must not
+				// be handed to the AI or generate a further reply. The next inbound message
+				// will therefore begin a new history window for this phone number.
+				if (waMessage.message?.trim().toLowerCase() === '/end') {
+					continue;
+				}
+
 				// Background job placeholder: do not block webhook response.
 				// When you add a real queue (BullMQ/Agenda), replace this.
 				setImmediate(() => {
@@ -185,6 +238,53 @@ export class AppController {
 			logger.error(err); // Winston now logs message + stack
 			return {
 				error: encryptPayload({ error: 'Failed to verify conversation webhook.' }),
+			};
+		}
+	}
+
+	@Post('conversation/messages')
+	async getConversationMessages(@Body() body: { request?: string }) {
+		try {
+			const decryptedBody = decryptPayload(body.request);
+			const phone = decryptedBody.phone ?? decryptedBody.whatsappNumber;
+
+			if (!phone) {
+				return {
+					error: encryptPayload({ error: 'Phone number is required.' }),
+				};
+			}
+
+			const messages = await WAMessage.findAll({
+				where: this.buildWhatsappPhoneWhereClause(phone),
+				order: [
+					['timestamp', 'ASC'],
+					['id', 'ASC'],
+				],
+			});
+
+			const serializedMessages = messages.map((message) => message.toJSON());
+			const lastMessage = serializedMessages[serializedMessages.length - 1] ?? null;
+			const sessionActive = lastMessage
+				? (lastMessage.message ?? '').trim().toLowerCase() !== '/end'
+				: false;
+
+			return {
+				response: encryptPayload({
+					phone: normalizePhone(phone).slice(-10),
+					sessionActive,
+					messages: serializedMessages,
+				}),
+			};
+		} catch (error) {
+			const cleanMessage = `Error in getConversationMessages: ${
+				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'
+			}`;
+			const err = new Error(cleanMessage);
+			err.stack = error.stack;
+
+			logger.error(err);
+			return {
+				error: encryptPayload({ error: 'Failed to fetch WhatsApp messages.' }),
 			};
 		}
 	}

@@ -9,6 +9,7 @@ import { AIModule } from './services/ai/ai.module';
 import { AppService } from './services/app.service';
 import { AdminDashboardPdfService } from './services/dashboard.service';
 import { ShippingService } from './services/shipping.service';
+import { WhatsAppModule } from './services/whatsapp/whatsapp.module';
 
 @Module({
 	imports: [
@@ -18,6 +19,7 @@ import { ShippingService } from './services/shipping.service';
 		//   exclude: ['/api*'], // Exclude API routes
 		// }),
 		AIModule,
+		WhatsAppModule,
 	],
 	controllers: [
 		AppController,

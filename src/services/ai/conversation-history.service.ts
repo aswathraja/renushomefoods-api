@@ -46,13 +46,13 @@ export class ConversationHistoryService {
 			return [];
 		}
 
-		// Walk backwards to find the trigger point (last UNKNOWN or /start message)
+		// Walk backwards to find the last explicit session end marker.
+		// Conversation should persist across app logins and refreshes until the user sends /end.
 		let triggerIndex = -1;
 		for (let i = priorMessages.length - 1; i >= 0; i--) {
 			const msg = priorMessages[i].toJSON();
-			const isUnknown = msg.action === 'UNKNOWN';
-			const isStart = msg.message?.trim().toLowerCase() === '/start';
-			if (isUnknown || isStart) {
+			const isEnd = msg.message?.trim().toLowerCase() === '/end';
+			if (isEnd) {
 				triggerIndex = i;
 				break;
 			}
