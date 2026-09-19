@@ -25,7 +25,9 @@ const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
  *   - 9500808653      → 9500808653
  */
 export const normalizePhone = (num: string): string => {
-	if (!num) {return num;}
+	if (!num) {
+		return num;
+	}
 	return num.replace(/^\+\d{1,3}|\s+/g, '');
 };
 
@@ -370,7 +372,7 @@ export const extractWAMessageFromWebhook = (body: any): WAMessageExtracted[] => 
 };
 
 // Helper to get TEMP_PATH from environment
-const {TEMP_PATH} = process.env;
+const { TEMP_PATH } = process.env;
 
 // Helper to save uploaded file to temp directory
 export const saveFileToTemp = async (
@@ -465,10 +467,6 @@ export const deleteTempFile = (filename: string): void => {
 
 // Helper to validate sticker file types
 export const isValidStickerType = (mimeType: string): boolean => {
-	const allowedStickerTypes = [
-		'image/webp',
-		'image/png',
-		'image/jpeg',
-	];
+	const allowedStickerTypes = ['image/webp', 'image/png', 'image/jpeg'];
 	return allowedStickerTypes.includes(mimeType);
 };

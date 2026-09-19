@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
-import { Op, WhereOptions } from 'sequelize';
 import { join } from 'path';
+import { Op, WhereOptions } from 'sequelize';
 import { sequelize } from '../database/database';
 import { logger } from '../logger/logger';
 import { Message, WAMessage } from '../models/models';
@@ -198,7 +198,11 @@ export class AppController {
 	@Post('conversation')
 	async answerMessage(@Body() body: any): Promise<any> {
 		try {
-			const waMessages = extractWAMessageFromWebhook(body);
+			let messageRequest = body;
+			if (body?.request) {
+				messageRequest = decryptPayload(body.request);
+			}
+			const waMessages = extractWAMessageFromWebhook(messageRequest);
 			for (const waMessage of waMessages) {
 				logger.info(
 					`WA message: name=${waMessage.name}, whatsappNumber=${waMessage.whatsappNumber}, timestamp=${waMessage.timestamp}, type=${waMessage.type}, message=${waMessage.message}`,
@@ -227,7 +231,9 @@ export class AppController {
 				});
 			}
 
-			return 'Thanks for the message';
+			return {
+				message: 'Thanks for the message',
+			};
 		} catch (error) {
 			const cleanMessage = `Error in conversation: ${
 				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'
@@ -260,6 +266,7 @@ export class AppController {
 					['timestamp', 'ASC'],
 					['id', 'ASC'],
 				],
+				limit: 200,
 			});
 
 			const serializedMessages = messages.map((message) => message.toJSON());

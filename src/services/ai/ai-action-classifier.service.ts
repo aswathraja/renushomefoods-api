@@ -25,11 +25,7 @@ import {
 import { ConversationHistoryService } from './conversation-history.service';
 
 export type AIIntentAction =
-	| 'TRACK_ORDER'
-	| 'PLACE_ORDER'
-	| 'CANCEL_ORDER'
-	| 'DOWNLOAD_INVOICE'
-	| 'UNKNOWN';
+	'TRACK_ORDER' | 'PLACE_ORDER' | 'CANCEL_ORDER' | 'DOWNLOAD_INVOICE' | 'UNKNOWN';
 
 export type AIActionClassifierResult = {
 	action: `${AIIntentAction}`;
@@ -138,7 +134,7 @@ export class AIActionClassifierService {
 				const cancelPendingOrder = result.extracted.entities?.cancelPendingOrder === true;
 				const { phone } = result.extracted;
 				const normalizedPhone = phone ? normalizePhone(phone) : null;
-				const {orderId} = result.extracted;
+				const { orderId } = result.extracted;
 
 				// AI-directed cancellation: cancel the pending order for this phone
 				if (cancelPendingOrder && normalizedPhone) {
@@ -347,7 +343,15 @@ export class AIActionClassifierService {
 								const orderId = order.toJSON().id;
 								const responseText = `Your order has been placed! Order ID: ${orderId}`;
 								if (phone) {
-									await this.whatsAppService.sendText({ phone, text: responseText });
+									const textResponse_p1 = await this.whatsAppService.sendText({
+										phone,
+										text: responseText,
+									});
+									await this.saveOutboundMessage(
+										phone,
+										responseText,
+										textResponse_p1.messages[0]?.id ?? '',
+									);
 									// Fire and forget - send invoice and payment request separately
 									// This ensures user gets the order confirmation even if invoice generation fails
 									this.sendOrderInvoiceWithPaymentRequest(
@@ -363,7 +367,15 @@ export class AIActionClassifierService {
 								// Order creation failed after address was matched
 								const responseText = 'Failed to create order. Please try again.';
 								if (phone) {
-									await this.whatsAppService.sendText({ phone, text: responseText });
+									const textResponse_p2 = await this.whatsAppService.sendText({
+										phone,
+										text: responseText,
+									});
+									await this.saveOutboundMessage(
+										phone,
+										responseText,
+										textResponse_p2.messages[0]?.id ?? '',
+									);
 								}
 								return { action: 'PLACE_ORDER', response: responseText, confident };
 							}
@@ -411,7 +423,9 @@ export class AIActionClassifierService {
 					 */
 					const isRemovalKeywordForProduct = (productName: string): boolean => {
 						const p = productName.toLowerCase().trim();
-						if (!p) {return false;}
+						if (!p) {
+							return false;
+						}
 
 						// Avoid regex escape issues: use simple substring phrases.
 						const lower = rawMessage.toLowerCase();
@@ -432,7 +446,7 @@ export class AIActionClassifierService {
 					const removalNotFoundProducts: string[] = [];
 
 					for (const newProd of matchedProducts) {
-						const {productName} = newProd;
+						const { productName } = newProd;
 						const idx = existingProducts.findIndex(
 							(p) => p.productName.toLowerCase() === productName.toLowerCase(),
 						);
@@ -460,8 +474,11 @@ export class AIActionClassifierService {
 
 						// ADD/UPDATE: set quantity
 						const qtyToSet = newProd.quantity ?? 1;
-						if (idx >= 0) {existingProducts[idx].quantity = qtyToSet;}
-						else {existingProducts.push({ productName, quantity: qtyToSet });}
+						if (idx >= 0) {
+							existingProducts[idx].quantity = qtyToSet;
+						} else {
+							existingProducts.push({ productName, quantity: qtyToSet });
+						}
 					}
 
 					if (removalNotFoundProducts.length > 0 && phone) {
@@ -543,7 +560,8 @@ export class AIActionClassifierService {
 					const shippingLine =
 						shippingCost > 0 ? `\n*Shipping: ₹${shippingCost.toFixed(2)}*` : `\n*Shipping: Free*`;
 
-					const confirmationText = `Please confirm your order:\n\n${productLines}${shippingLine}\n*Total: ₹${grandTotal.toFixed(2)}*\n\nDelivery Address: ${address}\nPhone: ${userPhone}\n\nReply "yes" to confirm or "no" to cancel.`;
+					const deliveryName = pendingOrder?.toJSON().deliveryName ?? extractedDeliveryName;
+					const confirmationText = `Please confirm your order:\n\n${productLines}${shippingLine}\n*Total: ₹${grandTotal.toFixed(2)}*\n\n*Delivery Address:* ${deliveryName},${address}\n\n*Phone:* ${userPhone}\n\nReply "yes" to confirm or "no" to cancel.`;
 
 					if (phone) {
 						const textResponse_p8 = await this.whatsAppService.sendText({
@@ -638,7 +656,15 @@ export class AIActionClassifierService {
 						const orderId = order.toJSON().id;
 						const responseText = `Your order has been placed! Order ID: ${orderId}`;
 						if (phone) {
-							await this.whatsAppService.sendText({ phone, text: responseText });
+							const textResponse = await this.whatsAppService.sendText({
+								phone,
+								text: responseText,
+							});
+							await this.saveOutboundMessage(
+								phone,
+								responseText,
+								textResponse.messages[0]?.id ?? '',
+							);
 							// Fire and forget - send invoice and payment request separately
 							// This ensures user gets the order confirmation even if invoice generation fails
 							this.sendOrderInvoiceWithPaymentRequest(order, phone, orderTotal).catch((err) => {
@@ -649,7 +675,15 @@ export class AIActionClassifierService {
 					} else {
 						const responseText = 'Failed to create order. Please try again.';
 						if (phone) {
-							await this.whatsAppService.sendText({ phone, text: responseText });
+							const textResponse = await this.whatsAppService.sendText({
+								phone,
+								text: responseText,
+							});
+							await this.saveOutboundMessage(
+								phone,
+								responseText,
+								textResponse.messages[0]?.id ?? '',
+							);
 						}
 						return { action: 'PLACE_ORDER', response: responseText, confident };
 					}
@@ -668,7 +702,15 @@ export class AIActionClassifierService {
 						if (currentProducts.length === 0) {
 							const responseText = 'What would you like to order?';
 							if (phone) {
-								await this.whatsAppService.sendText({ phone, text: responseText });
+								const textResponse = await this.whatsAppService.sendText({
+									phone,
+									text: responseText,
+								});
+								await this.saveOutboundMessage(
+									phone,
+									responseText,
+									textResponse.messages[0]?.id ?? '',
+								);
 							}
 							return { action: 'PLACE_ORDER', response: responseText, confident };
 						}
@@ -742,7 +784,8 @@ export class AIActionClassifierService {
 						}
 
 						// We have address - send full confirmation
-						const confirmationText = `Please confirm your order:\n\n${productLines}${shippingLine}\n*Total: ₹${grandTotal.toFixed(2)}*\n\nDelivery Address: ${address}\nPhone: ${userPhone}\n\nReply "yes" to confirm or "no" to cancel.`;
+						const deliveryName = pendingData.deliveryName || extractedDeliveryName;
+						const confirmationText = `Please confirm your order:\n\n${productLines}${shippingLine}\n*Total: ₹${grandTotal.toFixed(2)}*\n\n*Delivery Address:* ${deliveryName},${address}\n\n*Phone:* ${userPhone}\n\nReply "yes" to confirm or "no" to cancel.`;
 						if (phone) {
 							const textResponse_p13 = await this.whatsAppService.sendText({
 								phone,
@@ -761,7 +804,8 @@ export class AIActionClassifierService {
 					// No pending order - ask what they want to order
 					const responseText = 'What would you like to order?';
 					if (phone) {
-						await this.whatsAppService.sendText({ phone, text: responseText });
+						const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+						await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 					}
 					return { action: 'PLACE_ORDER', response: responseText, confident };
 				}
@@ -840,7 +884,8 @@ export class AIActionClassifierService {
 				if (currentProducts.length === 0) {
 					const responseText = 'What would you like to order?';
 					if (phone) {
-						await this.whatsAppService.sendText({ phone, text: responseText });
+						const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+						await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 					}
 					return { action: 'PLACE_ORDER', response: responseText, confident };
 				}
@@ -849,7 +894,8 @@ export class AIActionClassifierService {
 				if (!currentAddress) {
 					const responseText = 'Please provide your delivery address with name.';
 					if (phone) {
-						await this.whatsAppService.sendText({ phone, text: responseText });
+						const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+						await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 					}
 					return { action: 'PLACE_ORDER', response: responseText, confident };
 				}
@@ -859,7 +905,8 @@ export class AIActionClassifierService {
 				if (!currentDeliveryName) {
 					const responseText = 'Please provide your name for delivery.';
 					if (phone) {
-						await this.whatsAppService.sendText({ phone, text: responseText });
+						const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+						await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 					}
 					return { action: 'PLACE_ORDER', response: responseText, confident };
 				}
@@ -889,7 +936,7 @@ export class AIActionClassifierService {
 					shippingLine = `\n*Shipping: Free*`;
 				}
 
-				const confirmationText = `Please confirm your order:\n\n${productLines}${shippingLine}\n*Total: ₹${grandTotal.toFixed(2)}*\n\nDelivery Address: ${address}\nPhone: ${userPhone}\n\nReply "yes" to confirm or "no" to cancel.`;
+				const confirmationText = `Please confirm your order:\n\n${productLines}${shippingLine}\n*Total: ₹${grandTotal.toFixed(2)}*\n\n*Delivery Address:* ${currentDeliveryName},${address}\n\n*Phone:* ${userPhone}\n\nReply "yes" to confirm or "no" to cancel.`;
 
 				if (phone) {
 					const textResponse_p17 = await this.whatsAppService.sendText({
@@ -951,7 +998,8 @@ export class AIActionClassifierService {
 		}
 
 		if (phone) {
-			await this.whatsAppService.sendText({ phone, text: responseText });
+			const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+			await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 		}
 
 		return responseText;
@@ -976,7 +1024,7 @@ export class AIActionClassifierService {
 		const statusVerb = isDelivered ? 'was' : 'is';
 		const deliveryVerb = isDelivered ? 'was delivered' : 'expected to be delivered';
 
-		return `Your Order (ID: ${order.toJSON()?.id}) ${statusVerb} *${order.toJSON()?.status}*. It was placed on *${orderDate}* and ${deliveryVerb} on *${deliveryDate}*.`;
+		return `Your Order (ID: ${order.toJSON()?.id}) ${statusVerb} *${order.toJSON()?.status}*\n\n It was placed on *${orderDate}* and ${deliveryVerb} on *${deliveryDate}*`;
 	}
 
 	async handleCancelOrder(phone: string | null, orderId: string | null): Promise<string> {
@@ -999,7 +1047,8 @@ export class AIActionClassifierService {
 		}
 
 		if (phone) {
-			await this.whatsAppService.sendText({ phone, text: responseText });
+			const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+			await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 		}
 
 		return responseText;
@@ -1010,11 +1059,18 @@ export class AIActionClassifierService {
 
 		if (!orderId) {
 			responseText = 'Please provide your order ID to download your invoice.';
+			if (phone) {
+				const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+				await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
+			}
 		} else {
 			const order = await this.findOrderByIdAndPhone(orderId, phone);
 			if (!order) {
 				responseText = 'The Order ID is not found for your phone number';
-				this.whatsAppService.sendText({ phone, text: responseText });
+				if (phone) {
+					const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+					await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
+				}
 			} else {
 				responseText = `Your invoice for Order ID ${orderId} is ready for download.`;
 
@@ -1029,13 +1085,18 @@ export class AIActionClassifierService {
 						const downloadUrl = `${process.env.API_HOST}/temp/${tempFile.filename}`;
 
 						// Send as document message with the temp file link
-						await this.whatsAppService.sendMedia({
+						const mediaResponse = await this.whatsAppService.sendMedia({
 							phone: `${phone.replace(/[\s+\-]/g, '')}`,
 							mediaUrl: downloadUrl,
 							mediaType: 'document',
 							filename,
 							caption: `Your invoice for Order ID ${orderId}`,
 						});
+						await this.saveOutboundMessage(
+							phone,
+							`Invoice document sent for Order ID ${orderId}`,
+							mediaResponse.messages[0]?.id ?? '',
+						);
 					} catch (error) {
 						logger.error(`Failed to send invoice via WhatsApp: ${error}`);
 					} finally {
@@ -1052,19 +1113,20 @@ export class AIActionClassifierService {
 	}
 
 	async handleUnknown(phone: string | null): Promise<string> {
-		const responseText =
-			'Please select what you want to do from this options:\n\n1️⃣ Place Order - To order food\n2️⃣ Track Order - To check order status\n3️⃣ Download Invoice - To get your invoice\n4️⃣ Cancel Order - To cancel your order';
+		const responseText = `*Please select what you want to do:*\n1. *Place Order* - To place an order\n2. *Track Order* - To check order status\n3. *Download Invoice* - To get your invoice\n4. *Cancel Order* - To cancel your order\n*Reply with the option number to continue.*`;
 
 		if (phone) {
 			try {
-				await this.whatsAppService.sendTemplate({
+				const templateResponse = await this.whatsAppService.sendTemplate({
 					phone,
 					templateName: 'conversationstarter',
 					languageCode: 'en',
 				});
+				await this.saveOutboundMessage(phone, responseText, templateResponse.messages[0]?.id ?? '');
 			} catch (error) {
 				logger.warn(`Template message failed, sending text instead: ${error}`);
-				await this.whatsAppService.sendText({ phone, text: responseText });
+				const textResponse = await this.whatsAppService.sendText({ phone, text: responseText });
+				await this.saveOutboundMessage(phone, responseText, textResponse.messages[0]?.id ?? '');
 			}
 		}
 
@@ -1570,6 +1632,21 @@ export class AIActionClassifierService {
 
 			// If we have an existing userAddress (provided or found), use it; otherwise create new
 			if (!userAddress) {
+				// Check if we have delivery name - if not, ask for it before creating address
+				const {deliveryName} = pendingData;
+				if (!deliveryName) {
+					const responseText = 'Please provide your name for delivery.';
+					if (normalizedPhone) {
+						await this.whatsAppService.sendText({
+							phone: normalizedPhone,
+							text: responseText,
+						});
+						await this.saveOutboundMessage(normalizedPhone, responseText, '');
+					}
+					await pendingOrder.update({ confirmed: null });
+					return null;
+				}
+
 				// Check if we have pincode - if not, ask for it
 				if (!pincode) {
 					const responseText = 'Please provide your delivery pincode for shipping calculation.';
@@ -1584,15 +1661,27 @@ export class AIActionClassifierService {
 					return null;
 				}
 
+				// Ask for phone number for the new address if not available
+				if (!normalizedPhone) {
+					const responseText = 'Please provide your phone number for delivery.';
+					await this.whatsAppService.sendText({
+						phone: pendingData.phone || normalizedPhone,
+						text: responseText,
+					});
+					await this.saveOutboundMessage(pendingData.phone || normalizedPhone, responseText, '');
+					await pendingOrder.update({ confirmed: null });
+					return null;
+				}
+
 				// Check if we have city/state - if not, try to infer from address or use defaults
 				const extractedCity = pendingData.city || 'Chennai';
 				const extractedState = pendingData.state || 'Tamil Nadu';
 				const extractedCountry = pendingData.country || 'India';
 
-				const addressName = pendingData.deliveryName || 'Customer';
+				// Create the new address
 				userAddress = await UserAddress.create({
 					userId: user.toJSON().id,
-					name: addressName,
+					name: deliveryName,
 					addressLine1: address,
 					city: extractedCity,
 					state: extractedState,
@@ -1600,6 +1689,11 @@ export class AIActionClassifierService {
 					pincode: pincode || '600000',
 					phone: normalizedPhone,
 					isDefault: true,
+				});
+
+				// Find the address to retrieve the ID
+				userAddress = await UserAddress.findOne({
+					where: { id: userAddress.toJSON().id },
 				});
 			}
 
@@ -1679,11 +1773,21 @@ export class AIActionClassifierService {
 			const orderData = order.toJSON();
 			const user = await User.findByPk(orderData.userId as number);
 			const normalizedPhone = user?.toJSON().phone ?? phone;
+			// Look up the user address to get delivery name and address
+			const userAddress = await UserAddress.findByPk(orderData.userAddressId as number);
+			const deliveryName = userAddress?.toJSON().name ?? 'Customer';
+			const formattedAddress = userAddress?.toJSON().addressLine1 ?? '';
+			const addressLine = userAddress ? `${deliveryName},${formattedAddress}` : '';
 			// Always send payment screenshot request (this was previously skipped if document sending failed)
-			await this.whatsAppService.sendText({
+			const paymentResponse = await this.whatsAppService.sendText({
 				phone: `${normalizedPhone.replace(/[\s+\-]/g, '')}`,
-				text: `Once you have made the payment, please share the screenshot confirmation to proceed with your order.`,
+				text: `Once you have made the payment, please share the screenshot confirmation on WhatsApp to proceed with your order.\n\nDelivery: ${addressLine}`,
 			});
+			await this.saveOutboundMessage(
+				normalizedPhone,
+				`Once you have made the payment, please share the screenshot confirmation to proceed with your order.\n\nDelivery: ${addressLine}`,
+				paymentResponse.messages[0]?.id ?? '',
+			);
 			// Try to send document - don't fail if document sending fails
 			// We still want to send the payment request text regardless
 			try {
@@ -1692,7 +1796,7 @@ export class AIActionClassifierService {
 					mediaUrl: downloadUrl,
 					mediaType: 'document',
 					filename,
-					caption: `Please pay the total amount of ₹${orderTotal.toFixed(2)} to process your order.`,
+					caption: `Please pay the total amount of ₹${orderTotal.toFixed(2)} to process your order.\n\nDelivery: ${addressLine}`,
 				});
 			} catch (docError) {
 				logger.error(`Failed to send invoice document: ${docError}`);

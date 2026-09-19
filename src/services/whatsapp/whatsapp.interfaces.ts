@@ -69,7 +69,8 @@ export interface MediaUploadResponse {
 	url?: string;
 }
 
-export type WhatsAppMessageType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'template';
+export type WhatsAppMessageType =
+	'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'template';
 
 export interface MediaMessageOptions {
 	phone: string;

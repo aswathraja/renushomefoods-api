@@ -1083,13 +1083,13 @@ export class UserController {
 				],
 			});
 
-			if (!user) {
+			if (user) {
 				const normalizedPhone = normalizePhone(phone).slice(-10);
 				const greeting = 'What do you want to do today?';
-				const whatsappResponse = await this.whatsAppService.sendText({
-					phone: normalizedPhone,
-					text: greeting,
-				});
+				// const whatsappResponse = await this.whatsAppService.sendText({
+				// 	phone: normalizedPhone,
+				// 	text: greeting,
+				// });
 				// Persist the greeting with the rest of the conversation so it remains
 				// visible after browser refreshes and later login attempts.
 				await WAMessage.create({
@@ -1098,16 +1098,13 @@ export class UserController {
 					timestamp: String(Date.now()),
 					type: 'outbound',
 					message: greeting,
-					rawMessageId: whatsappResponse?.messages?.[0]?.id ?? null,
+					// rawMessageId: whatsappResponse?.messages?.[0]?.id ?? null,
+					rawMessageId: null,
 					action: 'OUTBOUND',
 				});
-
-				return {
-					response: encryptPayload({ success: true }),
-				};
+				return this.createLoginResponse(user);
 			}
-
-			return this.createLoginResponse(user);
+			throw new Error('User is not found');
 		} catch (error) {
 			const cleanMessage = `Error in whatsappLogin: ${
 				error?.original?.sqlMessage || error?.parent?.sqlMessage || error.message || 'Unknown error'

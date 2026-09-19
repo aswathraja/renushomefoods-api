@@ -1785,7 +1785,7 @@ export class OrderController {
 					);
 				}
 			}
-			const normalizePhone = (num: string) => num.replace(/[\s+\-]/g, '');
+			const normalizePhone = (num: string) => num.replace(/^\+?\d{1,2}|[\s+\-]/g, '');
 			const normalizedPhone = normalizePhone(phone);
 			const userSessionData = userSession?.toJSON?.();
 			let userId = userSessionData?.userId;

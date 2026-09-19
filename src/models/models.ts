@@ -284,9 +284,9 @@ WAMessage.init(
 			allowNull: false,
 		},
 		rawMessageId: {
-				type: DataTypes.STRING,
-				allowNull: true,
-				defaultValue: null,
+			type: DataTypes.STRING,
+			allowNull: true,
+			defaultValue: null,
 		},
 		fromUserId: {
 			type: DataTypes.STRING,
